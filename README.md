@@ -1,0 +1,22 @@
+# SysNode - Sistema P2P de Administración y Transferencia en Redes Locales
+
+**SysNode** es un sistema peer-to-peer (P2P) híbrido desarrollado en Python puro sobre la capa de transporte de sockets (`socket`, `threading`, `queue`, `struct`).
+
+---
+
+## 📚 Estructura de la Documentación
+
+Toda la documentación operativa, arquitectónica y de defensa del examen está organizada en la carpeta [docs/](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs):
+
+1. **[00_REGLAS_Y_NORMAS.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/00_REGLAS_Y_NORMAS.md):** Reglas estrictas de código, prohibición de abstracciones de red, y explicación pedagógica de `threading` vs `asyncio`.
+2. **[01_ARQUITECTURA_Y_RED.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/01_ARQUITECTURA_Y_RED.md):** Modelo de hilos, topología P2P, protocolos UDP Broadcast y TCP Framing.
+3. **[02_DESARROLLO_Y_FASE_MVP.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/02_DESARROLLO_Y_FASE_MVP.md):** Estructura del proyecto y guía paso a paso de las 5 fases del MVP.
+4. **[03_INFRAESTRUCTURA_Y_SEGURIDAD.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/03_INFRAESTRUCTURA_Y_SEGURIDAD.md):** Medidas de ciberseguridad, prevención de Command Injection (Lista blanca) y Path Traversal.
+5. **[04_DEFENSA_EXAMEN_Y_REDES.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/04_DEFENSA_EXAMEN_Y_REDES.md):** Guía de estudio para el examen final con el profesor de redes (Kurose, framing, multiplexación, preguntas trampa).
+6. **[dudas_implementacion.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/dudas_implementacion.md):** Preguntas de diseño e inconsistencias técnicas a considerar durante el desarrollo.
+
+---
+
+## 🎯 Objetivo de la Presentación (22 de Septiembre)
+
+Demostrar en vivo ante el profesor de redes el funcionamiento real de sockets TCP/UDP a bajo nivel, la gestión de concurrencia y la transferencia confiable en la LAN.
