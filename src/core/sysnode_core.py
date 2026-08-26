@@ -5,12 +5,14 @@ SysNode - Orquestador Principal del Nodo P2P (Core Manager)
 import uuid
 import queue
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from src.config import DEFAULT_TCP_PORT, HOST_NAME
 from src.network.utils import get_local_lan_ip
 from src.network.udp_beacon import UDPBeacon
 from src.network.udp_listener import UDPListener
+from src.network.tcp_server import TCPServer
+from src.network.tcp_client import TCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 class SysNodeCore:
     """
     Clase central que administra el ciclo de vida del nodo P2P.
-    Coordina los hilos de red UDP, expone la cola de eventos thread-safe
+    Coordina los hilos de red UDP y TCP, expone la cola de eventos thread-safe
     y mantiene desacoplada la lógica de red de cualquier interfaz gráfica (UI) o CLI.
     """
 
@@ -42,10 +44,17 @@ class SysNodeCore:
             event_queue=self.event_queue
         )
 
+        # Servidor TCP para recepción de texto y comandos
+        self.tcp_server = TCPServer(
+            tcp_port=self.tcp_port,
+            event_queue=self.event_queue,
+            node_name=self.node_name
+        )
+
         self._running = False
 
     def start(self) -> None:
-        """Inicia los componentes de red del nodo."""
+        """Inicia los componentes de red del nodo (UDP y TCP)."""
         if self._running:
             return
 
@@ -55,6 +64,9 @@ class SysNodeCore:
         logger.info(f"IP Local LAN: {self.local_ip}")
         logger.info(f"Puerto TCP: {self.tcp_port}")
         logger.info("=" * 60)
+
+        # Iniciar servidor TCP
+        self.tcp_server.start()
 
         # Iniciar hilos de descubrimiento UDP
         self.udp_listener.start()
@@ -72,6 +84,7 @@ class SysNodeCore:
         # Detener hilos de red
         self.udp_beacon.stop()
         self.udp_listener.stop()
+        self.tcp_server.stop()
 
         self._running = False
         logger.info("SysNodeCore detenido exitosamente.")
@@ -79,6 +92,52 @@ class SysNodeCore:
     def get_active_peers(self) -> Dict[str, Dict[str, Any]]:
         """Obtiene la lista actual de nodos descubiertos en la LAN."""
         return self.udp_listener.get_active_peers()
+
+    def send_text_to_peer(self, node_id: str, text: str) -> Tuple[bool, str]:
+        """Envía un texto al Shared Board de un nodo activo específico."""
+        peers = self.get_active_peers()
+        if node_id not in peers:
+            return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
+
+        peer = peers[node_id]
+        return TCPClient.send_text(
+            peer_ip=peer["ip"],
+            peer_port=peer["tcp_port"],
+            sender_id=self.node_id,
+            sender_name=self.node_name,
+            text=text
+        )
+
+    def send_command_to_peer(self, node_id: str, command_key: str) -> Tuple[bool, str]:
+        """Envía una solicitud de ejecución remota a un nodo activo específico."""
+        peers = self.get_active_peers()
+        if node_id not in peers:
+            return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
+
+        peer = peers[node_id]
+        return TCPClient.send_command(
+            peer_ip=peer["ip"],
+            peer_port=peer["tcp_port"],
+            sender_id=self.node_id,
+            sender_name=self.node_name,
+            command_key=command_key
+        )
+
+    def send_file_to_peer(self, node_id: str, file_path: str, progress_callback=None) -> Tuple[bool, str]:
+        """Transmite un archivo binario local al nodo remoto activo sobre TCP."""
+        peers = self.get_active_peers()
+        if node_id not in peers:
+            return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
+
+        peer = peers[node_id]
+        return TCPClient.send_file(
+            peer_ip=peer["ip"],
+            peer_port=peer["tcp_port"],
+            sender_id=self.node_id,
+            sender_name=self.node_name,
+            file_path=file_path,
+            progress_callback=progress_callback
+        )
 
     def is_running(self) -> bool:
         return self._running

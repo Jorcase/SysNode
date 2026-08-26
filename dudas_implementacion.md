@@ -32,12 +32,16 @@ Este documento recopila el estado de las decisiones técnicas y arquitectónicas
 ---
 
 ## 4. Lista Blanca de Comandos Remotos (SysAdmin)
-* **Estado:** 🟡 EN DEFINICIÓN (Revisión progresiva)
-* **Decisiones iniciales:**
-  * `CMD_LOCK_SCREEN`: Bloqueo de sesión (`xdg-screensaver lock` en Linux / `rundll32.exe user32.dll,LockWorkStation` en Windows).
-  * `CMD_NOTIFY`: Notificación visual de escritorio.
-  * `CMD_PING`: Test de respuesta entre nodos.
-  * `CMD_SYS_INFO`: Métricas de carga de sistema (CPU / RAM).
+* **Estado:** ✅ IMPLEMENTADO Y EXPANDIBLE
+* **Comandos actuales de la Lista Blanca:**
+  * `CMD_LOCK_SCREEN`: Bloqueo de sesión (`xdg-screensaver lock` en Linux / `ctypes.windll.user32.LockWorkStation()` en Windows).
+  * `CMD_PING`: Test de conectividad a Internet real del nodo remoto (prueba socket TCP a `1.1.1.1:53` y retorna latencia en ms o alerta de aislamiento LAN).
+  * `CMD_SYS_INFO`: Reporta el sistema operativo, versión de Kernel y versión de Python del dispositivo remoto.
+
+* **🚀 Hoja de Ruta de Comandos Futuros (Roadmap de Mejoras):**
+  * `CMD_SUSPEND`: Suspender el sistema operativo (Sleep Mode) en Windows/Linux.
+  * `CMD_SHUTDOWN`: Apagar/Reiniciar el equipo de forma programada con confirmación previa.
+  * `CMD_LAUNCH_APP`: **Lanzador de Aplicaciones Personalizables por el Usuario:** Permitir al usuario definir en la configuración local qué aplicaciones/programas autoriza a abrir de forma remota (ej. navegador, editor de texto, terminal) independientemente del sistema operativo.
 
 ---
 
