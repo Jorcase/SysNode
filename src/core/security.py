@@ -67,14 +67,42 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
                 ctypes.windll.user32.LockWorkStation()
                 return True, f"[{node_label}] Pantalla bloqueada mediante API nativa de Windows (user32.dll)."
             else:
-                # Intentar comandos comunes de bloqueo en Linux
-                for lock_cmd in [["xdg-screensaver", "lock"], ["gnome-screensaver-command", "-l"], ["cinnamon-screensaver-command", "-l"]]:
+                # Sistema Inteligente de Reconocimiento de Entorno Linux
+                desktop_env = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+                logger.debug(f"Detectado entorno de escritorio Linux: {desktop_env}")
+                
+                # Lista priorizada según el entorno detectado
+                lock_commands = []
+                if "XFCE" in desktop_env:
+                    lock_commands.append(["xflock4"])
+                elif "GNOME" in desktop_env:
+                    lock_commands.append(["gnome-screensaver-command", "-l"])
+                elif "KDE" in desktop_env:
+                    lock_commands.append(["loginctl", "lock-session"])
+                elif "X-CINNAMON" in desktop_env or "CINNAMON" in desktop_env:
+                    lock_commands.append(["cinnamon-screensaver-command", "-l"])
+                elif "MATE" in desktop_env:
+                    lock_commands.append(["mate-screensaver-command", "-l"])
+                
+                # Comandos de fallback generales por si falla el específico o no se detectó
+                lock_commands.extend([
+                    ["xdg-screensaver", "lock"],
+                    ["xflock4"],
+                    ["gnome-screensaver-command", "-l"],
+                    ["cinnamon-screensaver-command", "-l"],
+                    ["mate-screensaver-command", "-l"],
+                ])
+                
+                for lock_cmd in lock_commands:
                     try:
-                        subprocess.Popen(lock_cmd, shell=False)
-                        return True, f"[{node_label}] Comando de bloqueo enviado en Linux ({lock_cmd[0]})."
+                        proc = subprocess.run(lock_cmd, capture_output=True, text=True)
+                        if proc.returncode == 0:
+                            return True, f"[{node_label}] Pantalla bloqueada en Linux ({desktop_env or 'Genérico'}) usando {lock_cmd[0]}."
+                        else:
+                            logger.debug(f"Comando {lock_cmd[0]} falló con código {proc.returncode}.")
                     except FileNotFoundError:
                         continue
-                return False, f"[{node_label}] No se encontró un gestor de pantallas compatible en Linux."
+                return False, f"[{node_label}] No se pudo bloquear la pantalla. Ningún gestor compatible funcionó."
 
         # Caso especial 2: Información del sistema
         elif command_key == "CMD_SYS_INFO":
