@@ -23,7 +23,7 @@ class SysNodeDesktopApp(ctk.CTk):
         super().__init__()
         
         self.core = node_core
-        self.selected_node_ip = None
+        self.selected_node_id = None
         
         # Configuración de Ventana
         self.title(f"SysNode - {self.core.node_name}")
@@ -141,76 +141,80 @@ class SysNodeDesktopApp(ctk.CTk):
         self.chat_textbox.see("end")
         self.chat_textbox.configure(state="disabled")
 
-    def on_node_select(self, ip, name):
-        self.selected_node_ip = ip
-        logger.info(f"[UI] Nodo destino seleccionado: {name} ({ip})")
+    def on_node_select(self, node_id, hostname):
+        self.selected_node_id = node_id
+        logger.info(f"[UI] Nodo destino seleccionado: {hostname} ({node_id[:8]})")
         # Actualizar colores de los botones para marcar el activo
-        for node_ip, btn in self.node_buttons.items():
-            if node_ip == ip:
+        for n_id, btn in self.node_buttons.items():
+            if n_id == node_id:
                 btn.configure(fg_color="#2ECC71", text_color="black") # Verde activo
             else:
                 btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"]) # Default CTk
                 
-        self.append_to_chat(f"--- Seleccionaste el nodo destino: {name} ({ip}) ---")
+        self.append_to_chat(f"--- Seleccionaste el nodo destino: {hostname} ---")
 
     def send_text_message(self):
-        if not self.selected_node_ip:
+        if not self.selected_node_id:
             messagebox.showwarning("Atención", "Debes seleccionar un nodo en el Radar LAN primero.")
             return
             
         msg = self.msg_entry.get().strip()
         if not msg: return
         
-        node = self.core.get_node_info(self.selected_node_ip)
+        peers = self.core.get_active_peers()
+        node = peers.get(self.selected_node_id)
         if not node: return
         
-        success = self.core.send_text_message(self.selected_node_ip, node['tcp_port'], msg)
+        success, err_msg = self.core.send_text_to_peer(self.selected_node_id, msg)
         if success:
-            self.append_to_chat(f"[{self.core.node_name} -> {node['name']}]: {msg}")
+            self.append_to_chat(f"[{self.core.node_name} -> {node['hostname']}]: {msg}")
             self.msg_entry.delete(0, "end")
         else:
-            self.append_to_chat(f"❌ Error al enviar mensaje a {node['name']}.")
+            self.append_to_chat(f"❌ Error al enviar mensaje a {node['hostname']}: {err_msg}")
             
     def send_sysadmin_cmd(self, command):
-        if not self.selected_node_ip:
+        if not self.selected_node_id:
             messagebox.showwarning("Atención", "Debes seleccionar un nodo en el Radar LAN primero.")
             return
             
-        node = self.core.get_node_info(self.selected_node_ip)
+        peers = self.core.get_active_peers()
+        node = peers.get(self.selected_node_id)
         if not node: return
         
-        self.append_to_chat(f"⚡ Ejecutando {command} en {node['name']}...")
-        success = self.core.send_command(self.selected_node_ip, node['tcp_port'], command)
+        self.append_to_chat(f"⚡ Ejecutando {command} en {node['hostname']}...")
+        success, result_msg = self.core.send_command_to_peer(self.selected_node_id, command)
         if not success:
-            self.append_to_chat(f"❌ Error al conectar con {node['name']} para comando.")
+            self.append_to_chat(f"❌ Error al conectar con {node['hostname']} para comando: {result_msg}")
             
     def select_and_send_file(self):
-        if not self.selected_node_ip:
+        if not self.selected_node_id:
             messagebox.showwarning("Atención", "Debes seleccionar un nodo en el Radar LAN primero.")
             return
             
-        node = self.core.get_node_info(self.selected_node_ip)
+        peers = self.core.get_active_peers()
+        node = peers.get(self.selected_node_id)
         if not node: return
         
         filepath = filedialog.askopenfilename(title="Seleccionar archivo para enviar")
         if not filepath: return
         
-        self.progress_label.configure(text=f"Enviando archivo a {node['name']}...")
+        self.progress_label.configure(text=f"Enviando archivo a {node['hostname']}...")
         self.progress_bar.set(0)
         
-        # Enviar el archivo. (Nota: En una implementación 100% no bloqueante, 
-        # file_transfer.py debería notificar progreso por cola. Por ahora en Phase 3 
-        # el print_progress imprime en consola. Veremos la consola o actualizamos a 1 al finalizar).
-        success = self.core.send_file(self.selected_node_ip, node['tcp_port'], filepath)
+        def progress_cb(current, total):
+            # Usar after para no bloquear si lo llama el hilo TCP
+            self.after(0, lambda: self.progress_bar.set(current/total))
+
+        success, err_msg = self.core.send_file_to_peer(self.selected_node_id, filepath, progress_cb)
         
         if success:
             self.progress_bar.set(1.0)
             self.progress_label.configure(text="✅ ¡Archivo enviado con éxito!")
-            self.append_to_chat(f"✅ Archivo enviado exitosamente a {node['name']}.")
+            self.append_to_chat(f"✅ Archivo enviado exitosamente a {node['hostname']}.")
         else:
             self.progress_bar.set(0)
             self.progress_label.configure(text="❌ Error en la transferencia.")
-            self.append_to_chat(f"❌ Error al enviar archivo a {node['name']}.")
+            self.append_to_chat(f"❌ Error al enviar archivo a {node['hostname']}: {err_msg}")
             
     def poll_event_queue(self):
         """Consume eventos de SysNodeCore de forma segura (Thread-Safe) para actualizar la UI."""
@@ -219,26 +223,26 @@ class SysNodeDesktopApp(ctk.CTk):
         current_peers = self.core.get_active_peers()
         
         # Remover botones de nodos que ya no están
-        for ip in list(self.node_buttons.keys()):
-            if ip not in current_peers:
-                self.node_buttons[ip].destroy()
-                del self.node_buttons[ip]
-                if self.selected_node_ip == ip:
-                    self.selected_node_ip = None
+        for node_id in list(self.node_buttons.keys()):
+            if node_id not in current_peers:
+                self.node_buttons[node_id].destroy()
+                del self.node_buttons[node_id]
+                if self.selected_node_id == node_id:
+                    self.selected_node_id = None
                     self.append_to_chat("--- El nodo destino seleccionado se ha desconectado. ---")
                     
         # Agregar/Actualizar botones de nodos activos
-        for ip, info in current_peers.items():
-            display_text = f"{info['name']} ({ip})\n{info['os']}"
-            if ip not in self.node_buttons:
+        for node_id, info in current_peers.items():
+            display_text = f"{info['hostname']} ({info['ip']})\n{info['os']}"
+            if node_id not in self.node_buttons:
                 btn = ctk.CTkButton(self.nodes_frame, text=display_text, 
-                                    command=lambda ip=ip, name=info['name']: self.on_node_select(ip, name))
+                                    command=lambda nid=node_id, hname=info['hostname']: self.on_node_select(nid, hname))
                 btn.pack(pady=5, padx=5, fill="x")
-                self.node_buttons[ip] = btn
+                self.node_buttons[node_id] = btn
             else:
                 # Actualizar el texto por si cambió el nombre
-                if self.node_buttons[ip].cget("text") != display_text:
-                    self.node_buttons[ip].configure(text=display_text)
+                if self.node_buttons[node_id].cget("text") != display_text:
+                    self.node_buttons[node_id].configure(text=display_text)
                     
         # 2. Consumir la cola de eventos de red
         while True:
@@ -252,31 +256,41 @@ class SysNodeDesktopApp(ctk.CTk):
         self.after(100, self.poll_event_queue)
         
     def handle_network_event(self, event):
-        etype = event.get('type')
-        data = event.get('data', {})
-        sender_ip = event.get('sender_ip', 'Desconocido')
+        etype = event.get('event')
         
-        if etype == "TEXT_MSG":
-            msg = data.get('content', '')
-            # Buscamos el nombre del remitente si está en el radar
-            peer = self.core.get_node_info(sender_ip)
-            sender_name = peer['name'] if peer else sender_ip
+        # Ignorar eventos puramente UDP si no se necesitan en chat (PEER_DISCOVERED, etc)
+        if etype not in ["TEXT_RECEIVED", "COMMAND_RECEIVED", "FILE_RECEIVED", "FILE_PROGRESS"]:
+            return
+            
+        sender_name = event.get('sender_name', 'Desconocido')
+        
+        if etype == "TEXT_RECEIVED":
+            msg = event.get('text', '')
             self.append_to_chat(f"[{sender_name}]: {msg}")
             
-        elif etype == "CMD_RESPONSE":
-            response = data.get('response', '')
-            peer = self.core.get_node_info(sender_ip)
-            sender_name = peer['name'] if peer else sender_ip
-            self.append_to_chat(f"[SysAdmin {sender_name}]: {response}")
+        elif etype == "COMMAND_RECEIVED":
+            response = event.get('result', '')
+            success = event.get('success', False)
+            icon = "✅" if success else "❌"
+            self.append_to_chat(f"[SysAdmin {sender_name}] {icon}: {response}")
             
         elif etype == "FILE_RECEIVED":
-            filepath = data.get('filepath', '')
-            peer = self.core.get_node_info(sender_ip)
-            sender_name = peer['name'] if peer else sender_ip
-            self.append_to_chat(f"📥 Archivo recibido de {sender_name} guardado en:\n{filepath}")
-            
-        elif etype == "ERROR":
-            self.append_to_chat(f"❌ Error de {sender_ip}: {data.get('message', 'Error desconocido')}")
+            filepath = event.get('filepath', '')
+            success = event.get('success', False)
+            if success:
+                self.append_to_chat(f"📥 Archivo recibido de {sender_name} guardado en:\n{filepath}")
+            else:
+                self.append_to_chat(f"❌ Error al recibir archivo de {sender_name}: {event.get('msg')}")
+                
+        elif etype == "FILE_PROGRESS":
+            direction = event.get('direction')
+            if direction == "RECEIVING":
+                current = event.get('current', 0)
+                total = event.get('total', 1)
+                self.progress_bar.set(current / total)
+                self.progress_label.configure(text=f"Recibiendo de {sender_name}: {int((current/total)*100)}%")
+                if current >= total:
+                    self.progress_label.configure(text="✅ ¡Archivo recibido con éxito!")
 
     def on_closing(self):
         logger.info("[UI] Cerrando la interfaz de escritorio...")
