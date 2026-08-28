@@ -24,19 +24,34 @@ def setup_logging(verbose: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(description="SysNode P2P Network Tool")
-    parser.add_argument("--name", type=str, help="Nombre del nodo para mostrar en la red", default=None)
-    parser.add_argument("--tcp-port", type=int, help="Puerto TCP de escucha para conexiones", default=DEFAULT_TCP_PORT)
+    parser.add_argument("--name", type=str, default="SysNode-Default", help="Nombre lógico del nodo en la red")
+    parser.add_argument("--tcp-port", type=int, default=50001, help="Puerto TCP para transferencias (default: 50001)")
+    parser.add_argument("--cli", action="store_true", help="Ejecutar en modo consola (CLI) sin interfaz gráfica")
     parser.add_argument("--verbose", action="store_true", help="Habilitar mensajes detallados de depuración")
-
     args = parser.parse_args()
 
     setup_logging(args.verbose)
 
-    # Crear instancia del núcleo SysNodeCore
-    node_core = SysNodeCore(node_name=args.name, tcp_port=args.tcp_port)
-
-    # Iniciar interfaz CLI por defecto para la Fase 1
-    run_cli(node_core)
+    # 1. Instanciar el core (independiente de la UI)
+    core = SysNodeCore(node_name=args.name, tcp_port=args.tcp_port)
+    
+    # 2. Iniciar servicios de red en hilos secundarios
+    core.start()
+    
+    # 3. Lanzar la UI (MainThread)
+    try:
+        if args.cli:
+            logging.info("Iniciando en modo Consola (CLI)...")
+            from src.ui.cli import run_cli
+            run_cli(core)
+        else:
+            logging.info("Iniciando en modo Escritorio (GUI)...")
+            from src.ui.desktop_app import run_desktop_app
+            run_desktop_app(core)
+    except KeyboardInterrupt:
+        logging.info("Interrupción manual recibida. Cerrando nodo...")
+        core.stop()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
