@@ -140,11 +140,14 @@ class SysNodeDesktopApp(ctk.CTk):
     # --- LOGICA E INTERACCION ---
     
     def prompt_manual_ip(self):
-        dialog = ctk.CTkInputDialog(text="Ingresá la IP local del nodo (ej: 192.168.0.10):", title="Añadir Nodo Manual")
-        ip = dialog.get_input()
-        if ip:
-            self.core.add_manual_peer(ip.strip(), 50001)
-            self.append_to_chat(f"✅ Nodo manual añadido: {ip}:50001")
+        dialog = ctk.CTkInputDialog(text="Ingresá IP:Puerto (ej: 192.168.0.10 o 192.168.0.33:41849):", title="Añadir Nodo Manual")
+        user_input = dialog.get_input()
+        if user_input:
+            parts = user_input.strip().split(":")
+            ip = parts[0]
+            port = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 50001
+            self.core.add_manual_peer(ip, port)
+            self.append_to_chat(f"✅ Nodo manual añadido: {ip}:{port}")
 
     def append_to_chat(self, text):
         self.chat_textbox.configure(state="normal")

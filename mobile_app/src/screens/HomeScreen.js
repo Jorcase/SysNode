@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal } from 'react-native';
 import { UdpDiscovery } from '../network/UdpDiscovery';
 import { TcpClient } from '../network/TcpClient';
 import { TcpServer } from '../network/TcpServer';
@@ -21,6 +21,9 @@ export default function HomeScreen() {
   const [tcpPort, setTcpPort] = useState(0); // 0 = Asignación dinámica por SO
   const [peers, setPeers] = useState({});
   const [selectedPeer, setSelectedPeer] = useState(null);
+  
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualIp, setManualIp] = useState('');
   
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState([]);
@@ -189,6 +192,7 @@ export default function HomeScreen() {
           <Text className="text-white text-2xl font-bold">SysNode Mobile</Text>
           <Text className="text-gray-400 text-sm">ID: {nodeId.substring(0,8)}</Text>
           <Text className="text-gray-400 text-sm">Nombre: {nodeName}</Text>
+          <Text className="text-gray-400 text-sm">Puerto TCP: {tcpPort}</Text>
         </View>
 
         <View className="flex-row flex-1">
@@ -214,35 +218,7 @@ export default function HomeScreen() {
             </ScrollView>
             
             <TouchableOpacity
-              onPress={() => {
-                Alert.prompt(
-                  "Añadir Nodo Manual",
-                  "Ingresa la IP local del nodo (ej: 192.168.0.10):",
-                  [
-                    { text: "Cancelar", style: "cancel" },
-                    { 
-                      text: "Añadir", 
-                      onPress: (ip) => {
-                        if (ip) {
-                           const syntheticId = 'manual_' + Date.now();
-                           setPeers(prev => ({
-                             ...prev,
-                             [syntheticId]: {
-                               node_id: syntheticId,
-                               hostname: `Manual_${ip}`,
-                               os: "unknown",
-                               ip: ip.trim(),
-                               tcp_port: 50001,
-                               last_seen: Date.now() + 86400000 // 1 día en el futuro para que no expire
-                             }
-                           }));
-                        }
-                      }
-                    }
-                  ],
-                  "plain-text"
-                );
-              }}
+              onPress={() => setShowManualModal(true)}
               className="bg-[#27ae60] p-3 mt-2 rounded-lg items-center"
             >
               <Text className="text-white font-bold text-sm">➕ Añadir IP Manual</Text>
@@ -317,6 +293,55 @@ export default function HomeScreen() {
           </View>
         </View>
       </View>
+      
+      <Modal visible={showManualModal} transparent={true} animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
+          <View className="bg-[#2a2a2a] p-6 rounded-lg w-4/5">
+            <Text className="text-white text-lg font-bold mb-4">Añadir Nodo Manual</Text>
+            <Text className="text-gray-400 mb-2">Ingresa la IP local del nodo (ej: 192.168.0.10):</Text>
+            <TextInput 
+              value={manualIp}
+              onChangeText={setManualIp}
+              placeholder="192.168.0.10"
+              placeholderTextColor="#666"
+              className="bg-[#1a1a1a] text-white p-3 rounded-lg mb-4"
+              keyboardType="numeric"
+            />
+            <View className="flex-row justify-end">
+              <TouchableOpacity onPress={() => setShowManualModal(false)} className="px-4 py-2 mr-2">
+                <Text className="text-gray-400 font-bold">Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={() => {
+                  if (manualIp.trim()) {
+                     const parts = manualIp.trim().split(':');
+                     const ip = parts[0];
+                     const port = parts.length > 1 && !isNaN(parts[1]) ? parseInt(parts[1]) : 50001;
+                     const syntheticId = 'manual_' + Date.now();
+                     setPeers(prev => ({
+                       ...prev,
+                       [syntheticId]: {
+                         node_id: syntheticId,
+                         hostname: `Manual_${ip}`,
+                         os: "unknown",
+                         ip: ip,
+                         tcp_port: port,
+                         last_seen: Date.now() + 86400000
+                       }
+                     }));
+                     setShowManualModal(false);
+                     setManualIp('');
+                  }
+                }}
+                className="bg-[#3498db] px-4 py-2 rounded-lg"
+              >
+                <Text className="text-white font-bold">Añadir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </KeyboardAvoidingView>
   );
 }
