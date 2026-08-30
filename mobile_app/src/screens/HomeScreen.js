@@ -6,6 +6,7 @@ import { TcpServer } from '../network/TcpServer';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 // Generador simple de UUID v4 para no instalar dependencias extra
 function generateUUID() {
@@ -21,6 +22,9 @@ export default function HomeScreen() {
   const [tcpPort, setTcpPort] = useState(0); // 0 = Asignación dinámica por SO
   const [peers, setPeers] = useState({});
   const [selectedPeer, setSelectedPeer] = useState(null);
+  
+  const [permission, requestPermission] = useCameraPermissions();
+  const [showQrScanner, setShowQrScanner] = useState(false);
   
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualIp, setManualIp] = useState('');
@@ -223,6 +227,19 @@ export default function HomeScreen() {
             >
               <Text className="text-white font-bold text-sm">➕ Añadir IP Manual</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={async () => {
+                if (!permission?.granted) {
+                  const req = await requestPermission();
+                  if (!req.granted) return;
+                }
+                setShowQrScanner(true);
+              }}
+              className="bg-[#8E44AD] p-3 mt-2 rounded-lg items-center"
+            >
+              <Text className="text-white font-bold text-sm">📷 Escanear QR</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Área Principal (Chat) */}
@@ -339,6 +356,53 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showQrScanner} transparent={false} animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'black' }}>
+          {showQrScanner && (
+            <CameraView 
+              style={{ flex: 1 }}
+              facing="back"
+              onBarcodeScanned={({ data }) => {
+                // Expected format: sysnode://192.168.0.33:50001
+                if (data.startsWith('sysnode://')) {
+                   setShowQrScanner(false);
+                   const uriData = data.replace('sysnode://', '');
+                   const parts = uriData.split('?')[0].split(':');
+                   const ip = parts[0];
+                   const port = parts.length > 1 && !isNaN(parts[1]) ? parseInt(parts[1]) : 50001;
+                   
+                   if (ip) {
+                     const syntheticId = 'manual_' + Date.now();
+                     setPeers(prev => ({
+                       ...prev,
+                       [syntheticId]: {
+                         node_id: syntheticId,
+                         hostname: `QR_${ip}`,
+                         os: "unknown",
+                         ip: ip,
+                         tcp_port: port,
+                         last_seen: Date.now() + 86400000
+                       }
+                     }));
+                     Alert.alert('Éxito', `Nodo ${ip}:${port} añadido desde QR`);
+                   }
+                }
+              }}
+            >
+              <View className="flex-1 justify-between p-10 bg-transparent">
+                <Text className="text-white text-center font-bold text-lg bg-black/50 p-2 rounded">Escaneá un QR de SysNode</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowQrScanner(false)}
+                  className="bg-red-500 p-4 rounded-lg self-center mb-10"
+                >
+                  <Text className="text-white font-bold">Cerrar Escáner</Text>
+                </TouchableOpacity>
+              </View>
+            </CameraView>
+          )}
         </View>
       </Modal>
 

@@ -10,6 +10,12 @@ import logging
 from tkinter import filedialog, messagebox
 
 try:
+    import qrcode
+    from PIL import Image
+except ImportError:
+    pass
+
+try:
     import customtkinter as ctk
 except ImportError:
     print("❌ ERROR: La biblioteca 'customtkinter' no está instalada.")
@@ -67,7 +73,10 @@ class SysNodeDesktopApp(ctk.CTk):
         self.node_buttons = {} # ip -> ctk.CTkButton
         
         self.btn_add_manual = ctk.CTkButton(self.sidebar_frame, text="➕ Añadir Nodo (IP)", command=self.prompt_manual_ip)
-        self.btn_add_manual.grid(row=4, column=0, padx=20, pady=(0, 20), sticky="ew")
+        self.btn_add_manual.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="ew")
+        
+        self.btn_show_qr = ctk.CTkButton(self.sidebar_frame, text="📱 Ver Mi QR", command=self.show_qr_code, fg_color="#8E44AD", hover_color="#732D91")
+        self.btn_show_qr.grid(row=5, column=0, padx=20, pady=(0, 20), sticky="ew")
         
         # --- PANEL DERECHO (MAIN - Pestañas) ---
         self.tabview = ctk.CTkTabview(self)
@@ -148,6 +157,43 @@ class SysNodeDesktopApp(ctk.CTk):
             port = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 50001
             self.core.add_manual_peer(ip, port)
             self.append_to_chat(f"✅ Nodo manual añadido: {ip}:{port}")
+
+    def show_qr_code(self):
+        try:
+            import qrcode
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror("Error", "Faltan librerías para generar el QR. Ejecutá: pip install qrcode Pillow")
+            return
+            
+        qr_data = f"sysnode://{self.core.local_ip}:{self.core.tcp_port}"
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Guardamos en un archivo temporal
+        import tempfile
+        import os
+        temp_path = os.path.join(tempfile.gettempdir(), "sysnode_qr.png")
+        img.save(temp_path)
+        
+        # Mostrar en ventana flotante
+        qr_window = ctk.CTkToplevel(self)
+        qr_window.title("Código QR de Conexión")
+        qr_window.geometry("350x400")
+        qr_window.attributes("-topmost", True)
+        qr_window.resizable(False, False)
+        
+        lbl_info = ctk.CTkLabel(qr_window, text="Escaneá este QR con el celular", font=ctk.CTkFont(weight="bold"))
+        lbl_info.pack(pady=10)
+        
+        my_image = ctk.CTkImage(light_image=Image.open(temp_path), size=(250, 250))
+        image_label = ctk.CTkLabel(qr_window, image=my_image, text="")
+        image_label.pack(pady=10)
+        
+        lbl_uri = ctk.CTkLabel(qr_window, text=qr_data, text_color="gray50")
+        lbl_uri.pack()
 
     def append_to_chat(self, text):
         self.chat_textbox.configure(state="normal")

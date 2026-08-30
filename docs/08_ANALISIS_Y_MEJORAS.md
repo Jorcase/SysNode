@@ -98,7 +98,8 @@ Ver §1.4 (tope de tamaño + consentimiento). Además: validar que `final_path` 
 
 ### 4.1 Conexión directa por IP / QR — *requisito documentado no implementado* ⭐
 `docs/00` §3.2 promete un **fallback de conexión directa por IP o QR** para redes con AP Isolation / broadcast UDP filtrado (típico en Wi-Fi de facultad). **No existe en el código.** Es la mejora de mayor valor:
-- Añadir en UI/CLI “Conectar a IP manual” → se agrega un peer sintético a la lista y se puede enviar por TCP directo aunque el radar UDP esté bloqueado.
+- Añadir en UI/CLI “Conectar a IP manual” → se agrega un peer sintético a la lista y se puede enviar por TCP directo aunque el radar UDP esté bloqueado. *(Implementado en Sprint 3)*.
+- **NOTA (Faltante):** Actualmente no hay un mecanismo en la UI (Desktop o Mobile) para eliminar un nodo añadido manualmente si el usuario se equivoca al ingresar la IP/Puerto. Esto se debe agregar en la fase de pulido (Versión 1.0+).
 - Generar/mostrar un QR (`qrcode` ya está en `requirements.txt`) que codifique `sysnode://<ip>:<puerto>?token=<...>`; la app móvil lo escanea. Esto **garantiza la demo en vivo** aunque el broadcast falle.
 
 ### 4.2 Diálogo de aceptación de archivos entrantes (UI)
