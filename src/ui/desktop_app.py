@@ -24,6 +24,7 @@ class SysNodeDesktopApp(ctk.CTk):
         
         self.core = node_core
         self.selected_node_id = None
+        self.event_queue = self.core.register_event_queue()
         
         # Configuración de Ventana
         self.title(f"SysNode - {self.core.node_name}")
@@ -247,7 +248,7 @@ class SysNodeDesktopApp(ctk.CTk):
         # 2. Consumir la cola de eventos de red
         while True:
             try:
-                event = self.core.event_queue.get_nowait()
+                event = self.event_queue.get_nowait()
                 self.handle_network_event(event)
             except queue.Empty:
                 break

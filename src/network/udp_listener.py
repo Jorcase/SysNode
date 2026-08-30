@@ -32,10 +32,10 @@ class UDPListener(threading.Thread):
     4. Notificar eventos (aparición, actualización, desaparición) a una cola thread-safe `queue.Queue`.
     """
 
-    def __init__(self, my_node_id: str, event_queue: queue.Queue):
+    def __init__(self, my_node_id: str, event_callback):
         super().__init__(daemon=True, name="UDPListenerThread")
         self.my_node_id = my_node_id
-        self.event_queue = event_queue
+        self.event_callback = event_callback
         
         # Diccionario thread-safe protegido por Lock:
         # node_id -> {hostname, os, tcp_port, ip, last_seen}
@@ -121,12 +121,12 @@ class UDPListener(threading.Thread):
 
                 if is_new:
                     logger.info(f"NUEVO NODO DESCUBIERTO: {hostname} ({peer_ip}:{tcp_port}) - ID: {node_id[:8]}")
-                    self.event_queue.put({
+                    self.event_callback({
                         "event": "PEER_DISCOVERED",
                         "peer": self.active_peers[node_id]
                     })
                 else:
-                    self.event_queue.put({
+                    self.event_callback({
                         "event": "PEER_UPDATED",
                         "peer": self.active_peers[node_id]
                     })
@@ -136,7 +136,7 @@ class UDPListener(threading.Thread):
                     removed = self.active_peers.pop(node_id, None)
                 if removed:
                     logger.info(f"NODO DESCONECTADO (Goodbye): {removed['hostname']} ({removed['ip']})")
-                    self.event_queue.put({
+                    self.event_callback({
                         "event": "PEER_REMOVED",
                         "node_id": node_id,
                         "peer": removed
@@ -157,7 +157,7 @@ class UDPListener(threading.Thread):
 
         for node_id in expired_ids:
             logger.info(f"NODO EXPIRADO por TTL (>{PEER_TTL_SEC}s sin respuesta): ID {node_id[:8]}")
-            self.event_queue.put({
+            self.event_callback({
                 "event": "PEER_EXPIRED",
                 "node_id": node_id
             })

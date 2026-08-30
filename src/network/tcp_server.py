@@ -27,10 +27,10 @@ class TCPServer(threading.Thread):
     Por cada cliente aceptado, delega la atención a un hilo TCPClientHandlerThread.
     """
 
-    def __init__(self, tcp_port: int, event_queue: queue.Queue, node_name: str = None):
+    def __init__(self, tcp_port: int, event_callback, node_name: str = None):
         super().__init__(daemon=True, name="TCPServerThread")
         self.tcp_port = tcp_port
-        self.event_queue = event_queue
+        self.event_callback = event_callback
         self.node_name = node_name or "NodoLocal"
         self._stop_event = threading.Event()
         self.running = False
@@ -61,7 +61,7 @@ class TCPServer(threading.Thread):
                 handler = TCPClientHandlerThread(
                     client_sock=client_sock,
                     peer_ip=peer_ip,
-                    event_queue=self.event_queue,
+                    event_callback=self.event_callback,
                     node_name=self.node_name
                 )
                 handler.start()
@@ -88,11 +88,11 @@ class TCPClientHandlerThread(threading.Thread):
     Recibe la trama con framing, determina la acción y responde si corresponde.
     """
 
-    def __init__(self, client_sock: socket.socket, peer_ip: str, event_queue: queue.Queue, node_name: str = None):
+    def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_name: str = None):
         super().__init__(daemon=True, name=f"TCPWorker-{peer_ip}")
         self.client_sock = client_sock
         self.peer_ip = peer_ip
-        self.event_queue = event_queue
+        self.event_callback = event_callback
         self.node_name = node_name
 
     def run(self) -> None:
@@ -112,7 +112,7 @@ class TCPClientHandlerThread(threading.Thread):
             # Caso 1: Compartir Texto (Shared Board)
             if action == "SHARE_TEXT":
                 text_content = payload.get("payload", "")
-                self.event_queue.put({
+                self.event_callback({
                     "event": "TEXT_RECEIVED",
                     "sender_id": sender_id,
                     "sender_name": sender_name,
@@ -130,7 +130,7 @@ class TCPClientHandlerThread(threading.Thread):
                 success, result_msg = execute_whitelisted_command(command_key, receiver_name=self.node_name)
 
                 # Notificar a la cola de eventos interna
-                self.event_queue.put({
+                self.event_callback({
                     "event": "COMMAND_RECEIVED",
                     "command": command_key,
                     "sender_name": sender_name,
@@ -167,7 +167,7 @@ class TCPClientHandlerThread(threading.Thread):
 
                 # Callback para actualizar el progreso en vivo
                 def progress_cb(received_bytes, total):
-                    self.event_queue.put({
+                    self.event_callback({
                         "event": "FILE_PROGRESS",
                         "direction": "RECEIVING",
                         "filename": clean_filename,
@@ -185,7 +185,7 @@ class TCPClientHandlerThread(threading.Thread):
                     progress_callback=progress_cb
                 )
 
-                self.event_queue.put({
+                self.event_callback({
                     "event": "FILE_RECEIVED",
                     "sender_name": sender_name,
                     "peer_ip": self.peer_ip,

@@ -1,0 +1,287 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image } from 'react-native';
+import { UdpDiscovery } from '../network/UdpDiscovery';
+import { TcpClient } from '../network/TcpClient';
+import { TcpServer } from '../network/TcpServer';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Crypto from 'expo-crypto';
+
+// Generador simple de UUID v4 para no instalar dependencias extra
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+export default function HomeScreen() {
+  const [nodeId] = useState(generateUUID());
+  const [nodeName] = useState('Android (' + Math.floor(Math.random() * 1000) + ')');
+  const [tcpPort, setTcpPort] = useState(0); // 0 = Asignación dinámica por SO
+  const [peers, setPeers] = useState({});
+  const [selectedPeer, setSelectedPeer] = useState(null);
+  
+  const [inputText, setInputText] = useState('');
+  const [messages, setMessages] = useState([]);
+  
+  const [isSendingFile, setIsSendingFile] = useState(false);
+  const [fileProgress, setFileProgress] = useState(0);
+
+  const udpRef = useRef(null);
+  const tcpServerRef = useRef(null);
+
+  useEffect(() => {
+    // 1. Iniciar TCP Server primero para obtener el puerto
+    const server = new TcpServer(0, (msg) => {
+      if (msg.type === "TEXT") {
+        setMessages(prev => [...prev, { 
+          id: Date.now() + Math.random(), 
+          sender: msg.sender, 
+          text: msg.text, 
+          isSelf: false 
+        }]);
+      } else if (msg.type === "FILE") {
+        setMessages(prev => [...prev, { 
+          id: Date.now() + Math.random(), 
+          sender: msg.sender, 
+          text: msg.text, 
+          isSelf: false,
+          fileUri: msg.uri
+        }]);
+      }
+    });
+
+    server.start((boundPort) => {
+      setTcpPort(boundPort);
+      
+      // 2. Una vez que tenemos el puerto TCP, iniciamos UDP Discovery
+      const udp = new UdpDiscovery(nodeId, nodeName, boundPort, (peer) => {
+        setPeers(prev => {
+          const newPeers = { ...prev };
+          newPeers[peer.node_id] = peer;
+          return newPeers;
+        });
+      });
+      
+      udp.start();
+      udpRef.current = udp;
+    });
+    
+    tcpServerRef.current = server;
+
+    // Limpiar nodos caídos cada 5 segundos
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      setPeers(prev => {
+        const active = {};
+        for (const [id, peer] of Object.entries(prev)) {
+          // Si el nodo emitió beacon en los últimos 15 segundos, está vivo
+          if (now - peer.last_seen < 15000) {
+            active[id] = peer;
+          }
+        }
+        return active;
+      });
+    }, 5000);
+
+    return () => {
+      if (udpRef.current) udpRef.current.stop();
+      if (tcpServerRef.current) tcpServerRef.current.stop();
+      clearInterval(cleanupInterval);
+    };
+  }, [nodeId, nodeName]);
+
+  const handleSendText = () => {
+    if (!selectedPeer || !inputText.trim()) return;
+
+    const text = inputText.trim();
+    setInputText('');
+    
+    // Agregamos a nuestro propio chat
+    setMessages(prev => [...prev, { id: Date.now(), sender: 'Yo', text, isSelf: true }]);
+
+    // Enviar P2P TCP
+    TcpClient.sendText(
+      selectedPeer.ip, 
+      selectedPeer.tcp_port, 
+      nodeId, 
+      nodeName, 
+      text,
+      (success, result) => {
+        if (!success) {
+          Alert.alert('Error enviando mensaje', result);
+        }
+      },
+      (errorMsg) => {
+        Alert.alert('Fallo de conexión', errorMsg);
+      }
+    );
+  };
+
+  const handleSendFile = async () => {
+    if (!selectedPeer) return;
+    
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true // Importante para poder leer el archivo en JS
+      });
+      
+      if (result.canceled) return;
+      
+      const file = result.assets[0];
+      
+      // Chequear tamaño (limitamos a 50MB para mobile en esta versión de demostración)
+      if (file.size > 50 * 1024 * 1024) {
+        Alert.alert('Archivo muy grande', 'Por ahora solo soportamos hasta 50MB desde el celular.');
+        return;
+      }
+      
+      setIsSendingFile(true);
+      setFileProgress(0);
+
+      // Calcular SHA-256 omitido en React Native para evitar 
+      // discordancia con los bytes binarios de Python.
+      // Se envía vacío para que el backend salte la verificación en este MVP.
+      let sha256 = "";
+
+      setMessages(prev => [...prev, { id: Date.now(), sender: 'Yo', text: `Enviando archivo: ${file.name}...`, isSelf: true }]);
+
+      await TcpClient.sendFile(
+        selectedPeer.ip, 
+        selectedPeer.tcp_port, 
+        nodeId, 
+        nodeName, 
+        file.uri, 
+        file.name, 
+        file.size, 
+        sha256, 
+        (sent, total) => {
+          setFileProgress(sent / total);
+        },
+        (success, result) => {
+          setIsSendingFile(false);
+          if (success) {
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'Yo', text: `Archivo ${file.name} enviado OK.`, isSelf: true }]);
+          } else {
+            Alert.alert('Error transfiriendo archivo', result);
+          }
+        },
+        (errorMsg) => {
+          setIsSendingFile(false);
+          Alert.alert('Error de conexión', errorMsg);
+        }
+      );
+    } catch (e) {
+      Alert.alert('Error', e.message);
+      setIsSendingFile(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View className="flex-1 bg-[#1a1a1a] p-4">
+        {/* Header */}
+        <View className="mb-6 mt-4">
+          <Text className="text-white text-2xl font-bold">SysNode Mobile</Text>
+          <Text className="text-gray-400 text-sm">ID: {nodeId.substring(0,8)}</Text>
+          <Text className="text-gray-400 text-sm">Nombre: {nodeName}</Text>
+        </View>
+
+        <View className="flex-row flex-1">
+          {/* Radar LAN (Lista de Nodos) */}
+          <View className="w-1/3 pr-2 border-r border-[#333]">
+            <Text className="text-white font-bold mb-4">Radar LAN</Text>
+            <ScrollView>
+              {Object.values(peers).length === 0 ? (
+                <Text className="text-gray-500 italic text-xs">Buscando nodos...</Text>
+              ) : (
+                Object.values(peers).map(peer => (
+                  <TouchableOpacity
+                    key={peer.node_id}
+                    onPress={() => setSelectedPeer(peer)}
+                    className={`p-3 mb-2 rounded-lg ${selectedPeer?.node_id === peer.node_id ? 'bg-[#3498db]' : 'bg-[#2c3e50]'}`}
+                  >
+                    <Text className="text-white font-bold text-sm" numberOfLines={1}>{peer.hostname}</Text>
+                    <Text className="text-gray-300 text-xs">{peer.ip}</Text>
+                    <Text className="text-gray-400 text-xs mt-1">{peer.os}</Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+
+          {/* Área Principal (Chat) */}
+          <View className="flex-1 pl-4 flex-col">
+            {!selectedPeer ? (
+              <View className="flex-1 items-center justify-center">
+                <Text className="text-gray-500 text-center">Selecciona un nodo del Radar LAN para interactuar</Text>
+              </View>
+            ) : (
+              <>
+                <View className="bg-[#2a2a2a] p-3 rounded-t-lg border-b border-[#444]">
+                  <Text className="text-white font-bold">Destino: {selectedPeer.hostname}</Text>
+                </View>
+                
+                <ScrollView className="flex-1 bg-[#222] p-4">
+                  {messages.map(msg => (
+                    <View key={msg.id} className={`mb-2 max-w-[80%] ${msg.isSelf ? 'self-end bg-[#3498db]' : 'self-start bg-[#444]'} p-2 rounded-lg`}>
+                      <Text className="text-gray-300 text-xs font-bold mb-1">{msg.sender}</Text>
+                      <Text className="text-white">{msg.text}</Text>
+                      {msg.fileUri && (
+                        <View className="mt-2">
+                          {(msg.fileUri.toLowerCase().endsWith('.png') || msg.fileUri.toLowerCase().endsWith('.jpg') || msg.fileUri.toLowerCase().endsWith('.jpeg')) && (
+                             <View className="bg-black/20 p-1 rounded mb-2 mt-2">
+                               <Image source={{ uri: msg.fileUri }} style={{ width: 200, height: 200, resizeMode: 'cover' }} className="rounded" />
+                             </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                  
+                  {isSendingFile && (
+                    <View className="mb-2 self-end bg-[#3498db] p-2 rounded-lg opacity-80 flex-row items-center">
+                      <ActivityIndicator color="white" size="small" className="mr-2" />
+                      <Text className="text-white">Enviando... {Math.round(fileProgress * 100)}%</Text>
+                    </View>
+                  )}
+                </ScrollView>
+
+                <View className="bg-[#2a2a2a] p-3 rounded-b-lg flex-row items-center">
+                  <TouchableOpacity 
+                    onPress={handleSendFile}
+                    disabled={isSendingFile}
+                    className={`bg-[#2c3e50] px-3 py-3 rounded-lg mr-2 ${isSendingFile ? 'opacity-50' : ''}`}
+                  >
+                    <Text className="text-white font-bold">📎 Archivo</Text>
+                  </TouchableOpacity>
+
+                  <TextInput
+                    value={inputText}
+                    onChangeText={setInputText}
+                    placeholder="Escribe un mensaje..."
+                    placeholderTextColor="#888"
+                    className="flex-1 bg-[#333] text-white p-2 rounded-lg mr-2"
+                    onSubmitEditing={handleSendText}
+                    editable={!isSendingFile}
+                  />
+                  <TouchableOpacity 
+                    onPress={handleSendText}
+                    disabled={isSendingFile}
+                    className={`bg-[#3498db] px-4 py-3 rounded-lg ${isSendingFile ? 'opacity-50' : ''}`}
+                  >
+                    <Text className="text-white font-bold">Enviar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}

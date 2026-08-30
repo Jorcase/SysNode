@@ -25,6 +25,7 @@ class SysNodeCLI:
 
     def __init__(self, node_core: SysNodeCore):
         self.core = node_core
+        self.event_queue = self.core.register_event_queue()
         self.message_history: List[str] = []
         self.max_history = 10
         self.running = False
@@ -43,7 +44,7 @@ class SysNodeCLI:
         """Procesa continuamente notificaciones recibidas por TCP/UDP."""
         while self.running:
             try:
-                event = self.core.event_queue.get(timeout=0.5)
+                event = self.event_queue.get(timeout=0.5)
                 event_type = event.get("event")
 
                 if event_type == "TEXT_RECEIVED":

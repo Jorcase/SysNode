@@ -52,3 +52,13 @@ desktop.ini
 web_mobile/node_modules/
 web_mobile/build/
 web_mobile/.next/
+
+# React Native (Mobile App Native)
+mobile_app/node_modules/
+mobile_app/android/.gradle/
+mobile_app/android/.cxx/
+mobile_app/android/build/
+mobile_app/android/app/build/
+mobile_app/android/app/.cxx/
+mobile_app/.expo/
+mobile_app/**/*.apk

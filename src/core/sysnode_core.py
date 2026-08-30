@@ -5,6 +5,7 @@ SysNode - Orquestador Principal del Nodo P2P (Core Manager)
 import uuid
 import queue
 import logging
+import threading
 from typing import Dict, Any, Tuple
 
 from src.config import DEFAULT_TCP_PORT, HOST_NAME
@@ -20,8 +21,8 @@ logger = logging.getLogger(__name__)
 class SysNodeCore:
     """
     Clase central que administra el ciclo de vida del nodo P2P.
-    Coordina los hilos de red UDP y TCP, expone la cola de eventos thread-safe
-    y mantiene desacoplada la lógica de red de cualquier interfaz gráfica (UI) o CLI.
+    Coordina los hilos de red UDP y TCP, expone colas de eventos (Event Broker)
+    y mantiene desacoplada la lógica de red de cualquier interfaz (UI, CLI o Web).
     """
 
     def __init__(self, node_name: str = None, tcp_port: int = DEFAULT_TCP_PORT):
@@ -30,8 +31,9 @@ class SysNodeCore:
         self.tcp_port = tcp_port
         self.local_ip = get_local_lan_ip()
 
-        # Cola de eventos thread-safe compartida con la UI / CLI
-        self.event_queue = queue.Queue()
+        # Broker de Eventos (Permite múltiples listeners como Desktop UI y Mobile WS)
+        self.event_queues = []
+        self._broker_lock = threading.Lock()
 
         # Hilos de descubrimiento UDP
         self.udp_beacon = UDPBeacon(
@@ -41,17 +43,30 @@ class SysNodeCore:
         )
         self.udp_listener = UDPListener(
             my_node_id=self.node_id,
-            event_queue=self.event_queue
+            event_callback=self.broadcast_event
         )
 
         # Servidor TCP para recepción de texto y comandos
         self.tcp_server = TCPServer(
             tcp_port=self.tcp_port,
-            event_queue=self.event_queue,
+            event_callback=self.broadcast_event,
             node_name=self.node_name
         )
 
         self._running = False
+
+    def register_event_queue(self) -> queue.Queue:
+        """Registra una nueva cola de eventos para un suscriptor y la devuelve."""
+        new_q = queue.Queue()
+        with self._broker_lock:
+            self.event_queues.append(new_q)
+        return new_q
+
+    def broadcast_event(self, event_dict: Dict[str, Any]) -> None:
+        """Inyecta un evento de red en TODAS las colas suscritas."""
+        with self._broker_lock:
+            for q in self.event_queues:
+                q.put(event_dict)
 
     def start(self) -> None:
         """Inicia los componentes de red del nodo (UDP y TCP)."""

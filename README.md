@@ -20,6 +20,25 @@ Toda la documentación operativa, arquitectónica y de defensa del examen está 
 
 ---
 
-## 🎯 Objetivo de la Presentación (22 de Septiembre)
+## 🚀 Guía Rápida de Uso
 
-Demostrar en vivo ante el profesor de redes el funcionamiento real de sockets TCP/UDP a bajo nivel, la gestión de concurrencia y la transferencia confiable en la LAN.
+1. **Instalar dependencias:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Ejecutar la Interfaz Gráfica (Desktop UI):**
+   ```bash
+   python3 main.py --name "MiPC"
+   ```
+3. **Ejecutar en modo Consola (CLI):**
+   ```bash
+   python3 main.py --cli --name "Consola" --tcp-port 50002
+   ```
+4. **Ejecutar la App Móvil (React Native):**
+   ```bash
+   cd mobile_app
+   npm install
+   npx expo start -c
+   ```
+
+*(El proyecto fue defendido con éxito en la materia de Redes. Ahora es mantenido como herramienta funcional para uso diario).*

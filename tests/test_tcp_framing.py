@@ -32,6 +32,7 @@ class TestTCPFramingAndCommands(unittest.TestCase):
             # Test 1: Enviar Texto (Shared Board) desde Node1 hacia Node2
             print("Probando envío de texto desde NodeAlpha a NodeBeta...")
             text_to_send = "Mensaje de prueba con framing TCP: https://github.com/jorcas/sysnode"
+            node2_q = node2.register_event_queue()
             success, response_msg = node1.send_text_to_peer(node2.node_id, text_to_send)
 
             self.assertTrue(success, f"Error en envío de texto: {response_msg}")
@@ -42,8 +43,8 @@ class TestTCPFramingAndCommands(unittest.TestCase):
 
             # Verificar que Node2 recibió el evento TEXT_RECEIVED
             received_event = None
-            while not node2.event_queue.empty():
-                evt = node2.event_queue.get_nowait()
+            while not node2_q.empty():
+                evt = node2_q.get_nowait()
                 if evt.get("event") == "TEXT_RECEIVED":
                     received_event = evt
                     break

@@ -8,7 +8,6 @@ import platform
 # Puertos por defecto
 UDP_DISCOVERY_PORT = 50000
 DEFAULT_TCP_PORT = 50001
-HTTP_GATEWAY_PORT = 8000
 
 # Direcciones IP y Broadcast
 BROADCAST_IP = "255.255.255.255"

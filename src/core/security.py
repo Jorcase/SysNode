@@ -86,6 +86,8 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
                 
                 # Comandos de fallback generales por si falla el específico o no se detectó
                 lock_commands.extend([
+                    ["loginctl", "lock-session"],             # SystemD genérico (muy confiable)
+                    ["dm-tool", "lock"],                      # LightDM (usado por Kali Linux por defecto)
                     ["xdg-screensaver", "lock"],
                     ["xflock4"],
                     ["gnome-screensaver-command", "-l"],
