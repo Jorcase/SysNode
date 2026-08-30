@@ -108,6 +108,10 @@ class SysNodeCore:
         """Obtiene la lista actual de nodos descubiertos en la LAN."""
         return self.udp_listener.get_active_peers()
 
+    def add_manual_peer(self, ip: str, port: int) -> None:
+        """Añade manualmente un nodo a la red, evadiendo bloqueos UDP."""
+        self.udp_listener.add_manual_peer(ip, port)
+
     def send_text_to_peer(self, node_id: str, text: str) -> Tuple[bool, str]:
         """Envía un texto al Shared Board de un nodo activo específico."""
         peers = self.get_active_peers()

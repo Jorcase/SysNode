@@ -66,6 +66,9 @@ class SysNodeDesktopApp(ctk.CTk):
         self.nodes_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
         self.node_buttons = {} # ip -> ctk.CTkButton
         
+        self.btn_add_manual = ctk.CTkButton(self.sidebar_frame, text="➕ Añadir Nodo (IP)", command=self.prompt_manual_ip)
+        self.btn_add_manual.grid(row=4, column=0, padx=20, pady=(0, 20), sticky="ew")
+        
         # --- PANEL DERECHO (MAIN - Pestañas) ---
         self.tabview = ctk.CTkTabview(self)
         self.tabview.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
@@ -136,6 +139,13 @@ class SysNodeDesktopApp(ctk.CTk):
         
     # --- LOGICA E INTERACCION ---
     
+    def prompt_manual_ip(self):
+        dialog = ctk.CTkInputDialog(text="Ingresá la IP local del nodo (ej: 192.168.0.10):", title="Añadir Nodo Manual")
+        ip = dialog.get_input()
+        if ip:
+            self.core.add_manual_peer(ip.strip(), 50001)
+            self.append_to_chat(f"✅ Nodo manual añadido: {ip}:50001")
+
     def append_to_chat(self, text):
         self.chat_textbox.configure(state="normal")
         self.chat_textbox.insert("end", text + "\n")

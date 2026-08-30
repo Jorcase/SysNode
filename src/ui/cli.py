@@ -129,6 +129,7 @@ class SysNodeCLI:
                 print("  [1] Enviar Texto (Shared Board) a un nodo")
                 print("  [2] Enviar Comando Remoto (SysAdmin) a un nodo")
                 print("  [3] Enviar Archivo (File Drop) a un nodo")
+                print("  [4] Añadir Nodo por IP Manual (Fallback TCP)")
                 print("  [r] Refrescar pantalla")
                 print("  [q] Salir")
                 
@@ -143,6 +144,8 @@ class SysNodeCLI:
                     self._action_send_command()
                 elif choice == "3":
                     self._action_send_file()
+                elif choice == "4":
+                    self._action_add_manual_peer()
                 elif choice.lower() == "q":
                     break
                 elif choice.lower() == "r":
@@ -268,6 +271,23 @@ class SysNodeCLI:
 
         input("\nPresioná Enter para volver al menú...")
 
+    def _action_add_manual_peer(self):
+        print("\n--- Añadir Nodo por IP Manual ---")
+        ip = input("Ingresá la IP local del nodo (ej: 192.168.0.10) > ").strip()
+        if not ip:
+            return
+            
+        port_str = input("Ingresá el puerto TCP (Enter para 50001) > ").strip()
+        port = 50001
+        if port_str:
+            try:
+                port = int(port_str)
+            except ValueError:
+                print("⚠️ Puerto inválido. Se usará 50001.")
+        
+        self.core.add_manual_peer(ip, port)
+        print(f"✅ Nodo {ip}:{port} añadido manualmente. Ahora podés seleccionarlo en el menú de envío.")
+        input("\nPresioná Enter para volver al menú...")
 
 def run_cli(node_core: SysNodeCore):
     cli = SysNodeCLI(node_core)

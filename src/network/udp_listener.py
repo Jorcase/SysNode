@@ -145,12 +145,36 @@ class UDPListener(threading.Thread):
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
 
+    def add_manual_peer(self, ip: str, port: int) -> None:
+        """Añade un peer de forma manual (bypassing UDP). Se le asigna un ID sintético."""
+        import uuid
+        synthetic_id = f"manual_{uuid.uuid4().hex[:8]}"
+        
+        with self.peers_lock:
+            self.active_peers[synthetic_id] = {
+                "node_id": synthetic_id,
+                "hostname": f"Manual_{ip}",
+                "os": "unknown",
+                "ip": ip,
+                "tcp_port": port,
+                "last_seen": time.time(),
+                "manual": True
+            }
+            
+        logger.info(f"NUEVO NODO MANUAL AÑADIDO: {ip}:{port}")
+        self.event_callback({
+            "event": "PEER_DISCOVERED",
+            "peer": self.active_peers[synthetic_id]
+        })
+
     def _cleanup_expired_peers(self, now: float) -> None:
         """Elimina del diccionario de peers los nodos que no hayan enviado latido por más de PEER_TTL_SEC."""
         expired_ids = []
 
         with self.peers_lock:
             for node_id, peer_info in list(self.active_peers.items()):
+                if peer_info.get("manual", False):
+                    continue  # Nodos manuales no expiran nunca
                 if now - peer_info["last_seen"] > PEER_TTL_SEC:
                     expired_ids.append(node_id)
                     del self.active_peers[node_id]

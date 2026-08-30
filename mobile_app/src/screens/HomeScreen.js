@@ -212,6 +212,41 @@ export default function HomeScreen() {
                 ))
               )}
             </ScrollView>
+            
+            <TouchableOpacity
+              onPress={() => {
+                Alert.prompt(
+                  "Añadir Nodo Manual",
+                  "Ingresa la IP local del nodo (ej: 192.168.0.10):",
+                  [
+                    { text: "Cancelar", style: "cancel" },
+                    { 
+                      text: "Añadir", 
+                      onPress: (ip) => {
+                        if (ip) {
+                           const syntheticId = 'manual_' + Date.now();
+                           setPeers(prev => ({
+                             ...prev,
+                             [syntheticId]: {
+                               node_id: syntheticId,
+                               hostname: `Manual_${ip}`,
+                               os: "unknown",
+                               ip: ip.trim(),
+                               tcp_port: 50001,
+                               last_seen: Date.now() + 86400000 // 1 día en el futuro para que no expire
+                             }
+                           }));
+                        }
+                      }
+                    }
+                  ],
+                  "plain-text"
+                );
+              }}
+              className="bg-[#27ae60] p-3 mt-2 rounded-lg items-center"
+            >
+              <Text className="text-white font-bold text-sm">➕ Añadir IP Manual</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Área Principal (Chat) */}
