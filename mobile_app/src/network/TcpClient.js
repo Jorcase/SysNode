@@ -2,9 +2,14 @@ import TcpSocket from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
 import * as FileSystem from 'expo-file-system/legacy';
 
+import hmacSHA256 from 'crypto-js/hmac-sha256';
+import hexEnc from 'crypto-js/enc-hex';
+
+const AUTH_TOKEN = "sysnode_secret_123";
+
 export class TcpClient {
   /**
-   * Conecta al nodo remoto, envía un mensaje JSON empaquetado con Framing (4 bytes BE length),
+   * Conecta al nodo remoto, envía un mensaje JSON empaquetado con Framing y Firma HMAC,
    * espera la respuesta ACK del servidor y cierra la conexión.
    */
   static sendFramedMessage(ip, port, payload, onResult, onError) {
@@ -17,10 +22,13 @@ export class TcpClient {
         const payloadStr = JSON.stringify(payload);
         const payloadBuf = Buffer.from(payloadStr, 'utf8');
         
-        const lengthBuf = Buffer.alloc(4);
-        lengthBuf.writeUInt32BE(payloadBuf.length, 0);
+        const signatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
+        const signatureBuf = Buffer.from(signatureStr, 'utf8'); // 64 bytes
         
-        const finalBuf = Buffer.concat([lengthBuf, payloadBuf]);
+        const lengthBuf = Buffer.alloc(4);
+        lengthBuf.writeUInt32BE(signatureBuf.length + payloadBuf.length, 0);
+        
+        const finalBuf = Buffer.concat([lengthBuf, signatureBuf, payloadBuf]);
         client.write(finalBuf);
       } catch (err) {
         if (!resolved) {
@@ -40,8 +48,26 @@ export class TcpClient {
       }
 
       if (expectedLength !== null && receiveBuffer.length >= expectedLength) {
-        const payloadBuf = receiveBuffer.slice(0, expectedLength);
+        const fullPayloadBuf = receiveBuffer.slice(0, expectedLength);
+        
+        if (expectedLength < 64) {
+            if (!resolved) { resolved = true; if (onError) onError("Falta firma HMAC"); }
+            client.destroy();
+            return;
+        }
+        
+        const receivedSignatureStr = fullPayloadBuf.slice(0, 64).toString('utf8');
+        const payloadBuf = fullPayloadBuf.slice(64);
         const payloadStr = payloadBuf.toString('utf8');
+        
+        const expectedSignatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
+        
+        if (receivedSignatureStr !== expectedSignatureStr) {
+            if (!resolved) { resolved = true; if (onError) onError("Firma HMAC inválida"); }
+            client.destroy();
+            return;
+        }
+
         try {
           const response = JSON.parse(payloadStr);
           if (!resolved) {
@@ -117,9 +143,13 @@ export class TcpClient {
       try {
         const payloadStr = JSON.stringify(metaPayload);
         const payloadBuf = Buffer.from(payloadStr, 'utf8');
+        
+        const signatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
+        const signatureBuf = Buffer.from(signatureStr, 'utf8');
+        
         const lengthBuf = Buffer.alloc(4);
-        lengthBuf.writeUInt32BE(payloadBuf.length, 0);
-        client.write(Buffer.concat([lengthBuf, payloadBuf]));
+        lengthBuf.writeUInt32BE(signatureBuf.length + payloadBuf.length, 0);
+        client.write(Buffer.concat([lengthBuf, signatureBuf, payloadBuf]));
       } catch (err) {
         if (!resolved) { resolved = true; onError("Error enviando metadata: " + err.message); }
         client.destroy();
@@ -138,9 +168,25 @@ export class TcpClient {
       }
 
       if (expectedLength !== null && receiveBuffer.length >= expectedLength) {
-        const payloadBuf = receiveBuffer.slice(0, expectedLength);
+        const fullPayloadBuf = receiveBuffer.slice(0, expectedLength);
+        
+        if (expectedLength < 64) {
+            if (!resolved) { resolved = true; onError("Falta firma HMAC en ACK"); client.destroy(); }
+            return;
+        }
+        
+        const receivedSignatureStr = fullPayloadBuf.slice(0, 64).toString('utf8');
+        const payloadBuf = fullPayloadBuf.slice(64);
+        const payloadStr = payloadBuf.toString('utf8');
+        
+        const expectedSignatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
+        if (receivedSignatureStr !== expectedSignatureStr) {
+            if (!resolved) { resolved = true; onError("Firma HMAC inválida en ACK"); client.destroy(); }
+            return;
+        }
+
         try {
-          const response = JSON.parse(payloadBuf.toString('utf8'));
+          const response = JSON.parse(payloadStr);
           if (response.status === "READY") {
             // El servidor remoto aceptó, comenzar a streamear bytes crudos
             await TcpClient._streamFileBytes(client, fileUri, filesize, onProgress, onResult, onError, () => {

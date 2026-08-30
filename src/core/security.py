@@ -115,8 +115,9 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
         elif command_key == "CMD_PING":
             start = time.time()
             try:
+                from src.config import PING_TIMEOUT_SEC
                 test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                test_sock.settimeout(2.0)
+                test_sock.settimeout(PING_TIMEOUT_SEC)
                 test_sock.connect(("1.1.1.1", 53))
                 latency_ms = int((time.time() - start) * 1000)
                 test_sock.close()
@@ -149,7 +150,12 @@ def sanitize_filename(incoming_filename: str) -> str:
     # Extraer únicamente el nombre base del archivo
     clean_name = os.path.basename(incoming_filename.strip())
     
-    # Eliminar posibles caracteres problemáticos
-    clean_name = clean_name.replace("..", "").replace("/", "").replace("\\", "")
+    # Limpiar caracteres prohibidos en nombres de archivo (Windows/Linux)
+    for char in '<>:"/\\|?*\0':
+        clean_name = clean_name.replace(char, "")
+        
+    # Prevenir que el nombre sea exactamente ".." o "."
+    if clean_name in (".", ".."):
+        return "unnamed_file"
     
     return clean_name or "unnamed_file"

@@ -11,6 +11,8 @@ que indica la longitud exacta en bytes del contenido que le sigue.
 import json
 import struct
 import socket
+import hmac
+import hashlib
 import logging
 from typing import Dict, Any, Optional
 
@@ -18,22 +20,33 @@ from src.config import TCP_HEADER_SIZE, BUFFER_SIZE
 
 logger = logging.getLogger(__name__)
 
+# Token de prueba (luego será dinámico en Sprint 3)
+try:
+    from src.config import AUTH_TOKEN
+except ImportError:
+    AUTH_TOKEN = "sysnode_secret_123"
 
 def send_framed_message(sock: socket.socket, payload: Dict[str, Any]) -> bool:
     """
-    Empaca un diccionario Python como JSON UTF-8, calcula su tamaño en bytes,
-    genera el encabezado binario de 4 bytes (struct.pack('>I', payload_length))
+    Empaca un diccionario Python como JSON UTF-8, le calcula un HMAC-SHA256,
+    genera el encabezado binario de 4 bytes con la longitud total,
     y transmite la trama completa a través del socket TCP.
+    Wire Format: [4 bytes Length] [64 bytes HMAC Hex] [JSON Payload]
     """
     try:
         raw_json = json.dumps(payload).encode("utf-8")
-        payload_length = len(raw_json)
+        
+        # Calcular HMAC del payload crudo
+        signature = hmac.new(AUTH_TOKEN.encode('utf-8'), raw_json, hashlib.sha256).hexdigest().encode('utf-8')
+        
+        # Length incluye la firma (64 bytes) y el JSON
+        payload_length = len(signature) + len(raw_json)
 
         # Encabezado binario de 4 bytes (Big-Endian unsigned int)
         header = struct.pack(">I", payload_length)
 
-        # Enviar encabezado + payload
-        sock.sendall(header + raw_json)
+        # Enviar encabezado + firma + payload
+        sock.sendall(header + signature + raw_json)
         return True
     except (socket.error, OSError) as e:
         logger.error(f"Error enviando trama TCP con framing: {e}")
@@ -44,10 +57,10 @@ def receive_framed_message(sock: socket.socket) -> Optional[Dict[str, Any]]:
     """
     Lee una trama de un socket TCP respetando el protocolo Length-Prefixed:
     1. Lee exactamente 4 bytes para obtener el encabezado con el tamaño L.
-    2. Realiza lecturas iterativas en bucle hasta acumular los L bytes exactos.
-    3. Decodifica el JSON UTF-8 y lo devuelve como diccionario.
-    
-    Devuelve None si la conexión se cerró limpiamente o ocurrió un error.
+    2. Lee exactamente L bytes del cuerpo.
+    3. Extrae los primeros 64 bytes (Firma HMAC).
+    4. Verifica que el HMAC corresponda al JSON restante.
+    5. Decodifica el JSON UTF-8 y lo devuelve.
     """
     try:
         # 1. Leer los 4 bytes del encabezado de tamaño
@@ -62,9 +75,23 @@ def receive_framed_message(sock: socket.socket) -> Optional[Dict[str, Any]]:
         if not raw_payload or len(raw_payload) < payload_length:
             logger.warning(f"Incompletitud en trama TCP: se esperaban {payload_length} bytes, se recibieron {len(raw_payload) if raw_payload else 0}")
             return None
+            
+        if payload_length < 64:
+            logger.warning("Mensaje rechazado: Tamaño insuficiente para incluir firma HMAC.")
+            return None
 
-        # 3. Decodificar JSON
-        payload = json.loads(raw_payload.decode("utf-8"))
+        # 3. Separar Firma (64 bytes) y JSON
+        received_hmac = raw_payload[:64]
+        raw_json = raw_payload[64:]
+        
+        # 4. Verificar Firma
+        expected_hmac = hmac.new(AUTH_TOKEN.encode('utf-8'), raw_json, hashlib.sha256).hexdigest().encode('utf-8')
+        if not hmac.compare_digest(received_hmac, expected_hmac):
+            logger.warning("🚨 ACCESO DENEGADO: Firma HMAC inválida. Se rechaza la trama de red.")
+            return None
+
+        # 5. Decodificar JSON
+        payload = json.loads(raw_json.decode("utf-8"))
         return payload
 
     except (socket.error, OSError) as e:

@@ -93,8 +93,29 @@ export class TcpServer {
         }
 
         if (expectedLength !== null && receiveBuffer.length >= expectedLength) {
-          const payloadBuf = receiveBuffer.slice(0, expectedLength);
+          const fullPayloadBuf = receiveBuffer.slice(0, expectedLength);
+          
+          if (expectedLength < 64) {
+             console.error("[TCP Server] Payload sin HMAC");
+             socket.destroy();
+             return;
+          }
+          
+          const receivedSignatureStr = fullPayloadBuf.slice(0, 64).toString('utf8');
+          const payloadBuf = fullPayloadBuf.slice(64);
           const payloadStr = payloadBuf.toString('utf8');
+          
+          // Importamos aquí o arriba
+          const hmacSHA256 = require('crypto-js/hmac-sha256');
+          const hexEnc = require('crypto-js/enc-hex');
+          const AUTH_TOKEN = "sysnode_secret_123";
+          
+          const expectedSignatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
+          if (receivedSignatureStr !== expectedSignatureStr) {
+             console.error("[TCP Server] Firma HMAC inválida");
+             socket.destroy();
+             return;
+          }
           
           try {
             const payload = JSON.parse(payloadStr);
@@ -165,10 +186,17 @@ export class TcpServer {
       const responseStr = JSON.stringify(responseObj);
       const payloadBuf = Buffer.from(responseStr, 'utf8');
       
-      const lengthBuf = Buffer.alloc(4);
-      lengthBuf.writeUInt32BE(payloadBuf.length, 0);
+      const hmacSHA256 = require('crypto-js/hmac-sha256');
+      const hexEnc = require('crypto-js/enc-hex');
+      const AUTH_TOKEN = "sysnode_secret_123";
       
-      const finalBuf = Buffer.concat([lengthBuf, payloadBuf]);
+      const signatureStr = hmacSHA256(responseStr, AUTH_TOKEN).toString(hexEnc);
+      const signatureBuf = Buffer.from(signatureStr, 'utf8');
+      
+      const lengthBuf = Buffer.alloc(4);
+      lengthBuf.writeUInt32BE(signatureBuf.length + payloadBuf.length, 0);
+      
+      const finalBuf = Buffer.concat([lengthBuf, signatureBuf, payloadBuf]);
       socket.write(finalBuf);
     } catch (e) {
       console.error('[TCP Server] Error enviando ACK:', e);
