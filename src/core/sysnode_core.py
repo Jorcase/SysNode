@@ -14,6 +14,8 @@ from src.network.udp_beacon import UDPBeacon
 from src.network.udp_listener import UDPListener
 from src.network.tcp_server import TCPServer
 from src.network.tcp_client import TCPClient
+from src.core.database import SysNodeDatabase
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,10 @@ class SysNodeCore:
         # Broker de Eventos (Permite múltiples listeners como Desktop UI y Mobile WS)
         self.event_queues = []
         self._broker_lock = threading.Lock()
+
+        # Database para persistencia de chat
+        db_path = os.path.join(os.getcwd(), "SysNode_Received", "history.db")
+        self.db = SysNodeDatabase(db_path)
 
         # Hilos de descubrimiento UDP
         self.udp_beacon = UDPBeacon(
@@ -63,7 +69,13 @@ class SysNodeCore:
         return new_q
 
     def broadcast_event(self, event_dict: Dict[str, Any]) -> None:
-        """Inyecta un evento de red en TODAS las colas suscritas."""
+        """Inyecta un evento de red en TODAS las colas suscritas y persiste el historial si es un mensaje de texto."""
+        # Interceptar mensajes entrantes para persistencia
+        if event_dict.get("event") == "TEXT_RECEIVED":
+            sender = event_dict.get("sender_name", "Desconocido")
+            text = event_dict.get("text", "")
+            self.db.save_message(sender, text, "IN")
+
         with self._broker_lock:
             for q in self.event_queues:
                 q.put(event_dict)

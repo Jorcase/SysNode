@@ -29,10 +29,20 @@ class SysNodeCLI:
         self.message_history: List[str] = []
         self.max_history = 10
         self.running = False
+        
+    def _load_history(self):
+        recent_messages = self.core.db.get_recent_messages(self.max_history)
+        for ts, sender, text, direction in recent_messages:
+            time_only = ts.split(" ")[1]
+            if direction == "IN":
+                self.message_history.append(f"[{time_only}] 📩 [TEXTO DE {sender}]: {text}")
+            else:
+                self.message_history.append(f"[{time_only}] 📤 [{self.core.node_name} -> {sender}]: {text}")
 
     def start(self):
         self.core.start()
         self.running = True
+        self._load_history()
 
         # Hilo para procesar eventos provenientes de la cola del Core
         event_thread = threading.Thread(target=self._process_events_loop, daemon=True)
@@ -51,7 +61,9 @@ class SysNodeCLI:
                     sender = event.get("sender_name")
                     ip = event.get("peer_ip")
                     text = event.get("text")
-                    msg = f"📩 [TEXTO DE {sender} ({ip})]: {text}"
+                    import datetime
+                    time_only = datetime.datetime.now().strftime("%H:%M:%S")
+                    msg = f"[{time_only}] 📩 [TEXTO DE {sender} ({ip})]: {text}"
                     self._add_to_history(msg)
 
                 elif event_type == "COMMAND_RECEIVED":
@@ -193,10 +205,13 @@ class SysNodeCLI:
         success, msg = self.core.send_text_to_peer(peer["node_id"], text)
 
         if success:
-            print(f"✅ ¡Texto entregado con éxito!: {msg}")
+            import datetime
+            time_only = datetime.datetime.now().strftime("%H:%M:%S")
+            self._add_to_history(f"[{time_only}] 📤 [{self.core.node_name} -> {peer['hostname']}]: {text}")
+            print(f"✅ ¡Texto entregado con éxito a {peer['hostname']}!: {msg}")
         else:
-            print(f"❌ Error entregando texto: {msg}")
-
+            print(f"❌ Error entregando texto a {peer['hostname']}: {msg}")
+            
         input("\nPresioná Enter para volver al menú...")
 
     def _action_send_command(self):

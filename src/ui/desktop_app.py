@@ -42,9 +42,23 @@ class SysNodeDesktopApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         self.build_ui()
+        self.load_chat_history()
         
         # Iniciar polling thread-safe de eventos
         self.after(100, self.poll_event_queue)
+        
+    def load_chat_history(self):
+        recent_messages = self.core.db.get_recent_messages(50)
+        if recent_messages:
+            self.append_to_chat("--- Historial de Mensajes ---", add_timestamp=False)
+            for ts, sender, text, direction in recent_messages:
+                # Extraer solo HH:MM:SS del timestamp (Y-m-d H:M:S)
+                time_only = ts.split(" ")[1]
+                if direction == "IN":
+                    self.append_to_chat(f"[{time_only}] [{sender}]: {text}", add_timestamp=False)
+                else:
+                    self.append_to_chat(f"[{time_only}] [{self.core.node_name} -> {sender}]: {text}", add_timestamp=False)
+            self.append_to_chat("--- Fin del Historial ---", add_timestamp=False)
         
     def build_ui(self):
         # Grid layout principal: 1 fila, 2 columnas (Sidebar y Main)
@@ -195,8 +209,12 @@ class SysNodeDesktopApp(ctk.CTk):
         lbl_uri = ctk.CTkLabel(qr_window, text=qr_data, text_color="gray50")
         lbl_uri.pack()
 
-    def append_to_chat(self, text):
+    def append_to_chat(self, text, add_timestamp=True):
         self.chat_textbox.configure(state="normal")
+        if add_timestamp:
+            import datetime
+            now_time = datetime.datetime.now().strftime("%H:%M:%S")
+            text = f"[{now_time}] {text}"
         self.chat_textbox.insert("end", text + "\n")
         self.chat_textbox.see("end")
         self.chat_textbox.configure(state="disabled")
@@ -211,7 +229,7 @@ class SysNodeDesktopApp(ctk.CTk):
             else:
                 btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"]) # Default CTk
                 
-        self.append_to_chat(f"--- Seleccionaste el nodo destino: {hostname} ---")
+        self.append_to_chat(f"--- Seleccionaste el nodo destino: {hostname} ---", add_timestamp=False)
 
     def send_text_message(self):
         if not self.selected_node_id:
