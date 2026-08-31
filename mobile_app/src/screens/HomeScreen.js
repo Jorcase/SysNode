@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal, StyleSheet } from 'react-native';
 import { UdpDiscovery } from '../network/UdpDiscovery';
 import { TcpClient } from '../network/TcpClient';
 import { TcpServer } from '../network/TcpServer';
@@ -362,37 +362,38 @@ export default function HomeScreen() {
       <Modal visible={showQrScanner} transparent={false} animationType="slide">
         <View style={{ flex: 1, backgroundColor: 'black' }}>
           {showQrScanner && (
-            <CameraView 
-              style={{ flex: 1 }}
-              facing="back"
-              onBarcodeScanned={({ data }) => {
-                // Expected format: sysnode://192.168.0.33:50001
-                if (data.startsWith('sysnode://')) {
-                   setShowQrScanner(false);
-                   const uriData = data.replace('sysnode://', '');
-                   const parts = uriData.split('?')[0].split(':');
-                   const ip = parts[0];
-                   const port = parts.length > 1 && !isNaN(parts[1]) ? parseInt(parts[1]) : 50001;
-                   
-                   if (ip) {
-                     const syntheticId = 'manual_' + Date.now();
-                     setPeers(prev => ({
-                       ...prev,
-                       [syntheticId]: {
-                         node_id: syntheticId,
-                         hostname: `QR_${ip}`,
-                         os: "unknown",
-                         ip: ip,
-                         tcp_port: port,
-                         last_seen: Date.now() + 86400000
-                       }
-                     }));
-                     Alert.alert('Éxito', `Nodo ${ip}:${port} añadido desde QR`);
-                   }
-                }
-              }}
-            >
-              <View className="flex-1 justify-between p-10 bg-transparent">
+            <View style={{ flex: 1 }}>
+              <CameraView 
+                style={{ flex: 1, ...StyleSheet.absoluteFillObject }}
+                facing="back"
+                onBarcodeScanned={({ data }) => {
+                  // Expected format: sysnode://192.168.0.33:50001
+                  if (data.startsWith('sysnode://')) {
+                     setShowQrScanner(false);
+                     const uriData = data.replace('sysnode://', '');
+                     const parts = uriData.split('?')[0].split(':');
+                     const ip = parts[0];
+                     const port = parts.length > 1 && !isNaN(parts[1]) ? parseInt(parts[1]) : 50001;
+                     
+                     if (ip) {
+                       const syntheticId = 'manual_' + Date.now();
+                       setPeers(prev => ({
+                         ...prev,
+                         [syntheticId]: {
+                           node_id: syntheticId,
+                           hostname: `QR_${ip}`,
+                           os: "unknown",
+                           ip: ip,
+                           tcp_port: port,
+                           last_seen: Date.now() + 86400000
+                         }
+                       }));
+                       Alert.alert('Éxito', `Nodo ${ip}:${port} añadido desde QR`);
+                     }
+                  }
+                }}
+              />
+              <View className="flex-1 justify-between p-10 bg-transparent absolute w-full h-full">
                 <Text className="text-white text-center font-bold text-lg bg-black/50 p-2 rounded">Escaneá un QR de SysNode</Text>
                 <TouchableOpacity 
                   onPress={() => setShowQrScanner(false)}
@@ -401,7 +402,7 @@ export default function HomeScreen() {
                   <Text className="text-white font-bold">Cerrar Escáner</Text>
                 </TouchableOpacity>
               </View>
-            </CameraView>
+            </View>
           )}
         </View>
       </Modal>
