@@ -72,9 +72,14 @@ class SysNodeCore:
         """Inyecta un evento de red en TODAS las colas suscritas y persiste el historial si es un mensaje de texto."""
         # Interceptar mensajes entrantes para persistencia
         if event_dict.get("event") == "TEXT_RECEIVED":
-            sender = event_dict.get("sender_name", "Desconocido")
+            node_id = event_dict.get("sender_id", "unknown")
             text = event_dict.get("text", "")
-            self.db.save_message(sender, text, "IN")
+            
+            # Registrar dispositivo de paso si no existe o actualizar nombre
+            sender_name = event_dict.get("sender_name", "Desconocido")
+            self.db.register_device(node_id, sender_name, "Unknown")
+            
+            self.db.save_message(node_id, text, "IN")
 
         with self._broker_lock:
             for q in self.event_queues:
@@ -131,13 +136,17 @@ class SysNodeCore:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
 
         peer = peers[node_id]
-        return TCPClient.send_text(
+        success, response = TCPClient.send_text(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
             text=text
         )
+        if success:
+            self.db.register_device(node_id, peer["hostname"], peer.get("os", "Unknown"))
+            self.db.save_message(node_id, text, "OUT")
+        return success, response
 
     def send_command_to_peer(self, node_id: str, command_key: str) -> Tuple[bool, str]:
         """Envía una solicitud de ejecución remota a un nodo activo específico."""
