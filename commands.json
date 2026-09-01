@@ -1,0 +1,5 @@
+[
+    {"nombre": "Test de Conectividad (Ping)", "comando": "CMD_PING"},
+    {"nombre": "Información de Sistema", "comando": "CMD_SYS_INFO"},
+    {"nombre": "Bloquear Pantalla", "comando": "CMD_LOCK_SCREEN"}
+]

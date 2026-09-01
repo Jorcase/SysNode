@@ -173,13 +173,22 @@ class SysNodeDesktopApp(ctk.CTk):
         
         self.chat_title.configure(text=f"Chat con: {hostname}")
         
-        for n_id, btn in self.node_buttons.items():
+        for n_id, frame in self.node_buttons.items():
             if n_id == node_id:
-                btn.configure(fg_color="#2ECC71", text_color="black")
+                frame._select_btn.configure(fg_color="#2ECC71", text_color="black")
             else:
-                btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
+                frame._select_btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
                 
         self.load_chat_history(node_id)
+
+    def remove_manual_node(self, node_id):
+        self.core.udp_listener.remove_manual_peer(node_id)
+        if node_id in self.node_buttons:
+            self.node_buttons[node_id].destroy()
+            del self.node_buttons[node_id]
+        if self.selected_node_id == node_id:
+            self.selected_node_id = None
+            self.chat_title.configure(text="Dispositivo eliminado.")
 
     def prompt_manual_ip(self):
         dialog = ctk.CTkInputDialog(text="Ingresá IP:Puerto (ej: 192.168.0.10:50001):", title="Añadir Manual")
@@ -272,11 +281,20 @@ class SysNodeDesktopApp(ctk.CTk):
         lbl = ctk.CTkLabel(menu_window, text="Seleccioná un comando a ejecutar:")
         lbl.pack(pady=10)
         
-        cmds = [
-            ("Test de Conectividad", "CMD_PING"),
-            ("Información de Sistema", "CMD_SYS_INFO"),
-            ("Bloquear Pantalla", "CMD_LOCK_SCREEN")
-        ]
+        import json
+        
+        cmds = []
+        try:
+            with open("commands.json", "r", encoding="utf-8") as f:
+                cmds_data = json.load(f)
+                cmds = [(c["nombre"], c["comando"]) for c in cmds_data]
+        except Exception as e:
+            logger.error(f"Error cargando commands.json: {e}")
+            cmds = [
+                ("Test de Conectividad", "CMD_PING"),
+                ("Información de Sistema", "CMD_SYS_INFO"),
+                ("Bloquear Pantalla", "CMD_LOCK_SCREEN")
+            ]
         
         for name, cmd_key in cmds:
             btn = ctk.CTkButton(menu_window, text=name, command=lambda c=cmd_key: [self.send_sysadmin_cmd(c), menu_window.destroy()])
@@ -339,13 +357,25 @@ class SysNodeDesktopApp(ctk.CTk):
             icon_os = "[PC]" if "Desktop" in info['os'] or "Windows" in info['os'] or "Linux" in info['os'] else "[Móvil]"
             display_text = f"{icon_os} {info['hostname']} ({info['ip']})"
             if node_id not in self.node_buttons:
-                btn = ctk.CTkButton(self.nodes_frame, text=display_text, anchor="w",
+                # Frame para el boton de seleccionar y el de eliminar
+                node_frame = ctk.CTkFrame(self.nodes_frame, fg_color="transparent")
+                node_frame.pack(pady=2, padx=2, fill="x")
+                
+                btn = ctk.CTkButton(node_frame, text=display_text, anchor="w",
                                     command=lambda nid=node_id, hname=info['hostname']: self.on_node_select(nid, hname))
-                btn.pack(pady=2, padx=2, fill="x")
-                self.node_buttons[node_id] = btn
+                btn.pack(side="left", fill="x", expand=True, padx=(0, 2))
+                
+                # Botón Eliminar solo para nodos manuales
+                if info.get('manual'):
+                    btn_del = ctk.CTkButton(node_frame, text="X", width=25, fg_color="#C0392B", hover_color="#922B21",
+                                            command=lambda nid=node_id: self.remove_manual_node(nid))
+                    btn_del.pack(side="right")
+                    
+                self.node_buttons[node_id] = node_frame
+                self.node_buttons[node_id]._select_btn = btn
             else:
-                if self.node_buttons[node_id].cget("text") != display_text:
-                    self.node_buttons[node_id].configure(text=display_text)
+                if self.node_buttons[node_id]._select_btn.cget("text") != display_text:
+                    self.node_buttons[node_id]._select_btn.configure(text=display_text)
                     
         while True:
             try:
