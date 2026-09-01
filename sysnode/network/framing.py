@@ -16,13 +16,13 @@ import hashlib
 import logging
 from typing import Dict, Any, Optional
 
-from src.config import TCP_HEADER_SIZE, BUFFER_SIZE
+from sysnode.config import TCP_HEADER_SIZE, BUFFER_SIZE
 
 logger = logging.getLogger(__name__)
 
 # Token de prueba (luego será dinámico en Sprint 3)
 try:
-    from src.config import AUTH_TOKEN
+    from sysnode.config import AUTH_TOKEN
 except ImportError:
     AUTH_TOKEN = "sysnode_secret_123"
 

@@ -225,7 +225,7 @@ export default function HomeScreen() {
               onPress={() => setShowManualModal(true)}
               className="bg-[#27ae60] p-3 mt-2 rounded-lg items-center"
             >
-              <Text className="text-white font-bold text-sm">➕ Añadir IP Manual</Text>
+              <Text className="text-white font-bold text-sm">[+] Añadir IP Manual</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -238,7 +238,7 @@ export default function HomeScreen() {
               }}
               className="bg-[#8E44AD] p-3 mt-2 rounded-lg items-center"
             >
-              <Text className="text-white font-bold text-sm">📷 Escanear QR</Text>
+              <Text className="text-white font-bold text-sm">[QR] Escanear QR</Text>
             </TouchableOpacity>
           </View>
 
@@ -285,7 +285,7 @@ export default function HomeScreen() {
                     disabled={isSendingFile}
                     className={`bg-[#2c3e50] px-3 py-3 rounded-lg mr-2 ${isSendingFile ? 'opacity-50' : ''}`}
                   >
-                    <Text className="text-white font-bold">📎 Archivo</Text>
+                    <Text className="text-white font-bold">[FILE] Archivo</Text>
                   </TouchableOpacity>
 
                   <TextInput

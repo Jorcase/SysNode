@@ -1,3 +1,4 @@
+import { ActionType } from "./Protocol";
 import TcpSocket from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -103,7 +104,7 @@ export class TcpClient {
 
   static sendText(peerIp, peerPort, senderId, senderName, text, onResult, onError) {
     const payload = {
-      action: "SHARE_TEXT",
+      action: ActionType.SHARE_TEXT,
       sender_id: senderId,
       sender_name: senderName,
       payload: text
@@ -130,7 +131,7 @@ export class TcpClient {
     let resolved = false;
 
     const metaPayload = {
-      action: "FILE_TRANSFER_META",
+      action: ActionType.FILE_TRANSFER_META,
       sender_id: senderId,
       sender_name: senderName,
       filename: filename,

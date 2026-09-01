@@ -1,3 +1,4 @@
+import { ActionType } from "./Protocol";
 import TcpSocket from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
 
@@ -154,7 +155,7 @@ export class TcpServer {
   handleIncomingMessage(socket, payload, onFileMetaReady) {
     const action = payload.action;
 
-    if (action === "SHARE_TEXT") {
+    if (action === ActionType.SHARE_TEXT) {
       if (this.onMessageReceived) {
         this.onMessageReceived({
           type: "TEXT",
@@ -164,12 +165,12 @@ export class TcpServer {
       }
       this._sendAck(socket, { status: "OK", msg: "Texto recibido por el celular" });
     } 
-    else if (action === "FILE_TRANSFER_META") {
+    else if (action === ActionType.FILE_TRANSFER_META) {
       // El servidor remoto quiere enviar un archivo. Respondemos READY para que comience a mandar chunks.
       if (onFileMetaReady) onFileMetaReady(payload);
       this._sendAck(socket, { status: "READY", msg: "Celular listo para recibir archivo" });
     }
-    else if (action === "REMOTE_CMD") {
+    else if (action === ActionType.REMOTE_CMD) {
       // El celular rechaza la ejecución de comandos SysAdmin nativos
       this._sendAck(socket, { 
         status: "ERROR", 

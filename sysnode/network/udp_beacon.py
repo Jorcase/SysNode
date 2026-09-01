@@ -9,7 +9,7 @@ import threading
 import logging
 from typing import Dict, Any
 
-from src.config import (
+from sysnode.config import (
     UDP_DISCOVERY_PORT,
     BROADCAST_IP,
     BEACON_INTERVAL_SEC,

@@ -1,3 +1,4 @@
+from sysnode.network.protocol import ActionType
 """
 SysNode - Cliente TCP para Conexiones Salientes
 
@@ -10,9 +11,9 @@ import socket
 import logging
 from typing import Dict, Any, Tuple
 
-from src.config import SOCKET_TIMEOUT_SEC
-from src.network.framing import send_framed_message, receive_framed_message
-from src.network.file_transfer import calculate_file_sha256, stream_file_bytes
+from sysnode.config import SOCKET_TIMEOUT_SEC
+from sysnode.network.framing import send_framed_message, receive_framed_message
+from sysnode.network.file_transfer import calculate_file_sha256, stream_file_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class TCPClient:
     def send_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, text: str) -> Tuple[bool, str]:
         """Envía un texto al Shared Board de un nodo remoto."""
         payload: Dict[str, Any] = {
-            "action": "SHARE_TEXT",
+            "action": ActionType.SHARE_TEXT,
             "sender_id": sender_id,
             "sender_name": sender_name,
             "payload": text
@@ -37,7 +38,7 @@ class TCPClient:
     def send_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, command_key: str) -> Tuple[bool, str]:
         """Solicita la ejecución de un comando validado por lista blanca en un nodo remoto."""
         payload: Dict[str, Any] = {
-            "action": "REMOTE_CMD",
+            "action": ActionType.REMOTE_CMD,
             "sender_id": sender_id,
             "sender_name": sender_name,
             "command": command_key
@@ -68,7 +69,7 @@ class TCPClient:
         sha256 = calculate_file_sha256(file_path)
 
         meta_payload: Dict[str, Any] = {
-            "action": "FILE_TRANSFER_META",
+            "action": ActionType.FILE_TRANSFER_META,
             "sender_id": sender_id,
             "sender_name": sender_name,
             "filename": filename,

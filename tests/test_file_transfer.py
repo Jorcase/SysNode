@@ -5,8 +5,8 @@ Test de Integración Automatizado para la Fase 3 (Transferencia Binaria de Archi
 import os
 import time
 import unittest
-from src.core.sysnode_core import SysNodeCore
-from src.network.file_transfer import calculate_file_sha256
+from sysnode.core.sysnode_core import SysNodeCore
+from sysnode.network.file_transfer import calculate_file_sha256
 
 
 class TestFileTransfer(unittest.TestCase):

@@ -4,7 +4,7 @@ Test de Integración Automatizado para la Fase 2 (TCP Framing, Shared Board y Co
 
 import time
 import unittest
-from src.core.sysnode_core import SysNodeCore
+from sysnode.core.sysnode_core import SysNodeCore
 
 
 class TestTCPFramingAndCommands(unittest.TestCase):

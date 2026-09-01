@@ -115,7 +115,7 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
         elif command_key == "CMD_PING":
             start = time.time()
             try:
-                from src.config import PING_TIMEOUT_SEC
+                from sysnode.config import PING_TIMEOUT_SEC
                 test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 test_sock.settimeout(PING_TIMEOUT_SEC)
                 test_sock.connect(("1.1.1.1", 53))

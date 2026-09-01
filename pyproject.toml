@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sysnode"
+version = "1.0.0"
+description = "SysNode P2P Network"
+authors = [
+    { name="SysNode Developer" }
+]
+dependencies = [
+    "customtkinter==5.2.2",
+    "qrcode==8.2",
+    "Pillow==12.3.0",
+]
+requires-python = ">=3.8"
+
+[tool.setuptools.packages.find]
+include = ["sysnode", "sysnode.*"]
+
+[project.scripts]
+sysnode = "sysnode.cli_entry:main"

@@ -7,9 +7,9 @@ import sys
 import logging
 import argparse
 
-from src.config import DEFAULT_TCP_PORT
-from src.core.sysnode_core import SysNodeCore
-from src.ui.cli import run_cli
+from sysnode.config import DEFAULT_TCP_PORT
+from sysnode.core.sysnode_core import SysNodeCore
+from sysnode.ui.cli import run_cli
 
 
 def setup_logging(verbose: bool = False):
@@ -42,11 +42,11 @@ def main():
     try:
         if args.cli:
             logging.info("Iniciando en modo Consola (CLI)...")
-            from src.ui.cli import run_cli
+            from sysnode.ui.cli import run_cli
             run_cli(core)
         else:
             logging.info("Iniciando en modo Escritorio (GUI)...")
-            from src.ui.desktop_app import run_desktop_app
+            from sysnode.ui.desktop_app import run_desktop_app
             run_desktop_app(core)
     except KeyboardInterrupt:
         logging.info("Interrupción manual recibida. Cerrando nodo...")

@@ -12,7 +12,7 @@ import socket
 import logging
 from typing import Dict, Any, Tuple, Callable, Optional
 
-from src.config import BUFFER_SIZE
+from sysnode.config import BUFFER_SIZE
 
 logger = logging.getLogger(__name__)
 

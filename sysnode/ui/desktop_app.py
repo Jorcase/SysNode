@@ -86,10 +86,10 @@ class SysNodeDesktopApp(ctk.CTk):
         self.nodes_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
         self.node_buttons = {} # ip -> ctk.CTkButton
         
-        self.btn_add_manual = ctk.CTkButton(self.sidebar_frame, text="➕ Añadir Nodo (IP)", command=self.prompt_manual_ip)
+        self.btn_add_manual = ctk.CTkButton(self.sidebar_frame, text="[+] Añadir Nodo (IP)", command=self.prompt_manual_ip)
         self.btn_add_manual.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="ew")
         
-        self.btn_show_qr = ctk.CTkButton(self.sidebar_frame, text="📱 Ver Mi QR", command=self.show_qr_code, fg_color="#8E44AD", hover_color="#732D91")
+        self.btn_show_qr = ctk.CTkButton(self.sidebar_frame, text="[QR] Ver Mi QR", command=self.show_qr_code, fg_color="#8E44AD", hover_color="#732D91")
         self.btn_show_qr.grid(row=5, column=0, padx=20, pady=(0, 20), sticky="ew")
         
         # --- PANEL DERECHO (MAIN - Pestañas) ---
@@ -170,7 +170,7 @@ class SysNodeDesktopApp(ctk.CTk):
             ip = parts[0]
             port = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 50001
             self.core.add_manual_peer(ip, port)
-            self.append_to_chat(f"✅ Nodo manual añadido: {ip}:{port}")
+            self.append_to_chat(f"[INFO] Nodo manual añadido: {ip}:{port}")
 
     def show_qr_code(self):
         try:
@@ -248,7 +248,7 @@ class SysNodeDesktopApp(ctk.CTk):
             self.append_to_chat(f"[{self.core.node_name} -> {node['hostname']}]: {msg}")
             self.msg_entry.delete(0, "end")
         else:
-            self.append_to_chat(f"❌ Error al enviar mensaje a {node['hostname']}: {err_msg}")
+            self.append_to_chat(f"[ERROR] Error al enviar mensaje a {node['hostname']}: {err_msg}")
             
     def send_sysadmin_cmd(self, command):
         if not self.selected_node_id:
@@ -259,10 +259,10 @@ class SysNodeDesktopApp(ctk.CTk):
         node = peers.get(self.selected_node_id)
         if not node: return
         
-        self.append_to_chat(f"⚡ Ejecutando {command} en {node['hostname']}...")
+        self.append_to_chat(f"[EXEC] Ejecutando {command} en {node['hostname']}...")
         success, result_msg = self.core.send_command_to_peer(self.selected_node_id, command)
         if not success:
-            self.append_to_chat(f"❌ Error al conectar con {node['hostname']} para comando: {result_msg}")
+            self.append_to_chat(f"[ERROR] Error al conectar con {node['hostname']} para comando: {result_msg}")
             
     def select_and_send_file(self):
         if not self.selected_node_id:
@@ -287,12 +287,12 @@ class SysNodeDesktopApp(ctk.CTk):
         
         if success:
             self.progress_bar.set(1.0)
-            self.progress_label.configure(text="✅ ¡Archivo enviado con éxito!")
-            self.append_to_chat(f"✅ Archivo enviado exitosamente a {node['hostname']}.")
+            self.progress_label.configure(text="[SUCCESS] Archivo enviado con éxito!")
+            self.append_to_chat(f"[INFO] Archivo enviado exitosamente a {node['hostname']}.")
         else:
             self.progress_bar.set(0)
-            self.progress_label.configure(text="❌ Error en la transferencia.")
-            self.append_to_chat(f"❌ Error al enviar archivo a {node['hostname']}: {err_msg}")
+            self.progress_label.configure(text="[ERROR] Error en la transferencia.")
+            self.append_to_chat(f"[ERROR] Error al enviar archivo a {node['hostname']}: {err_msg}")
             
     def poll_event_queue(self):
         """Consume eventos de SysNodeCore de forma segura (Thread-Safe) para actualizar la UI."""
@@ -349,16 +349,16 @@ class SysNodeDesktopApp(ctk.CTk):
         elif etype == "COMMAND_RECEIVED":
             response = event.get('result', '')
             success = event.get('success', False)
-            icon = "✅" if success else "❌"
+            icon = "[OK]" if success else "[FAIL]"
             self.append_to_chat(f"[SysAdmin {sender_name}] {icon}: {response}")
             
         elif etype == "FILE_RECEIVED":
             filepath = event.get('filepath', '')
             success = event.get('success', False)
             if success:
-                self.append_to_chat(f"📥 Archivo recibido de {sender_name} guardado en:\n{filepath}")
+                self.append_to_chat(f"[DOWNLOAD] Archivo recibido de {sender_name} guardado en:\n{filepath}")
             else:
-                self.append_to_chat(f"❌ Error al recibir archivo de {sender_name}: {event.get('msg')}")
+                self.append_to_chat(f"[ERROR] Error al recibir archivo de {sender_name}: {event.get('msg')}")
                 
         elif etype == "FILE_PROGRESS":
             direction = event.get('direction')
@@ -368,7 +368,7 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.progress_bar.set(current / total)
                 self.progress_label.configure(text=f"Recibiendo de {sender_name}: {int((current/total)*100)}%")
                 if current >= total:
-                    self.progress_label.configure(text="✅ ¡Archivo recibido con éxito!")
+                    self.progress_label.configure(text="[SUCCESS] Archivo recibido con éxito!")
 
     def on_closing(self):
         logger.info("[UI] Cerrando la interfaz de escritorio...")

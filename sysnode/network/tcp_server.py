@@ -1,3 +1,4 @@
+from sysnode.network.protocol import ActionType
 """
 SysNode - Servidor TCP Multihilo (Shared Board y Comandos Remotos)
 
@@ -13,10 +14,10 @@ import threading
 import logging
 from typing import Dict, Any
 
-from src.config import BIND_ALL_IP, DEFAULT_TCP_PORT, SOCKET_TIMEOUT_SEC
-from src.network.framing import receive_framed_message, send_framed_message
-from src.core.security import execute_whitelisted_command, sanitize_filename
-from src.network.file_transfer import receive_file_bytes
+from sysnode.config import BIND_ALL_IP, DEFAULT_TCP_PORT, SOCKET_TIMEOUT_SEC
+from sysnode.network.framing import receive_framed_message, send_framed_message
+from sysnode.core.security import execute_whitelisted_command, sanitize_filename
+from sysnode.network.file_transfer import receive_file_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class TCPClientHandlerThread(threading.Thread):
             logger.info(f"Mensaje TCP Recibido | Acción: '{action}' | Emisor: {sender_name} ({self.peer_ip})")
 
             # Caso 1: Compartir Texto (Shared Board)
-            if action == "SHARE_TEXT":
+            if action == ActionType.SHARE_TEXT:
                 text_content = payload.get("payload", "")
                 self.event_callback({
                     "event": "TEXT_RECEIVED",
@@ -123,7 +124,7 @@ class TCPClientHandlerThread(threading.Thread):
                 send_framed_message(self.client_sock, {"status": "OK", "msg": f"Texto recibido por {self.node_name}."})
 
             # Caso 2: Ejecución de Comando Remoto (SysAdmin)
-            elif action == "REMOTE_CMD":
+            elif action == ActionType.REMOTE_CMD:
                 command_key = payload.get("command", "")
                 logger.info(f"Solicitud de comando remoto: '{command_key}' enviado por {sender_name}")
 
@@ -147,7 +148,7 @@ class TCPClientHandlerThread(threading.Thread):
                 })
 
             # Caso 3: Transferencia de Archivo (File Drop) - Fase 1 (Metadata) -> ACK -> Streaming Binario
-            elif action == "FILE_TRANSFER_META":
+            elif action == ActionType.FILE_TRANSFER_META:
                 raw_filename = payload.get("filename", "unknown_file")
                 filesize_bytes = payload.get("filesize_bytes", 0)
                 sha256 = payload.get("sha256", "")

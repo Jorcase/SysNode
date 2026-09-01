@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 sys.modules['customtkinter'] = MagicMock()
 sys.modules['tkinter'] = MagicMock()
 
-from src.ui.desktop_app import SysNodeDesktopApp
-from src.core.sysnode_core import SysNodeCore
+from sysnode.ui.desktop_app import SysNodeDesktopApp
+from sysnode.core.sysnode_core import SysNodeCore
 
 class TestDesktopUI(unittest.TestCase):
     def test_ui_instantiation(self):

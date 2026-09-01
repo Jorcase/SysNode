@@ -10,7 +10,7 @@ import threading
 import logging
 from typing import Dict, Any
 
-from src.config import (
+from sysnode.config import (
     UDP_DISCOVERY_PORT,
     BIND_ALL_IP,
     PEER_TTL_SEC,
@@ -18,7 +18,7 @@ from src.config import (
     PROTOCOL_TYPE_ANNOUNCE,
     PROTOCOL_TYPE_GOODBYE,
 )
-from src.network.utils import configure_udp_reuse
+from sysnode.network.utils import configure_udp_reuse
 
 logger = logging.getLogger(__name__)
 

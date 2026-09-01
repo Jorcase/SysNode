@@ -10,8 +10,8 @@ import threading
 import logging
 from typing import Dict, Any, List
 
-from src.core.sysnode_core import SysNodeCore
-from src.core.security import COMMAND_WHITELIST
+from sysnode.core.sysnode_core import SysNodeCore
+from sysnode.core.security import COMMAND_WHITELIST
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class SysNodeCLI:
                     text = event.get("text")
                     import datetime
                     time_only = datetime.datetime.now().strftime("%H:%M:%S")
-                    msg = f"[{time_only}] 📩 [TEXTO DE {sender} ({ip})]: {text}"
+                    msg = f"[{time_only}] [IN] [TEXTO DE {sender} ({ip})]: {text}"
                     self._add_to_history(msg)
 
                 elif event_type == "COMMAND_RECEIVED":
@@ -71,7 +71,7 @@ class SysNodeCLI:
                     cmd = event.get("command")
                     success = event.get("success")
                     result = event.get("result")
-                    status_icon = "✅" if success else "❌"
+                    status_icon = "[OK]" if success else "[FAIL]"
                     msg = f"{status_icon} [COMANDO REMOTO DE {sender}]: {cmd} -> {result}"
                     self._add_to_history(msg)
 
@@ -80,7 +80,7 @@ class SysNodeCLI:
                     filename = event.get("filename")
                     success = event.get("success")
                     msg_text = event.get("msg")
-                    status_icon = "📁" if success else "❌"
+                    status_icon = "[FILE]" if success else "[FAIL]"
                     msg = f"{status_icon} [ARCHIVO RECIBIDO DE {sender}]: '{filename}' -> {msg_text}"
                     self._add_to_history(msg)
 
@@ -101,7 +101,7 @@ class SysNodeCLI:
         active_peers = self.core.get_active_peers()
 
         print("=" * 70)
-        print("    🌐 SYSNODE P2P - RADAR, SHARED BOARD & FILE DROP (Fase 3) 🌐")
+        print("    SYSNODE P2P - RADAR, SHARED BOARD & FILE DROP (Fase 3)")
         print("=" * 70)
         print(f"  Nodo Local   : {self.core.node_name}")
         print(f"  IP en LAN    : {self.core.local_ip}")
@@ -171,7 +171,7 @@ class SysNodeCLI:
     def _select_peer(self) -> Any:
         active_peers = list(self.core.get_active_peers().values())
         if not active_peers:
-            print("\n⚠️ No hay otros nodos activos en la red LAN para seleccionar.")
+            print("\n[INFO] No hay otros nodos activos en la red LAN para seleccionar.")
             input("Presioná Enter para volver al menú...")
             return None
 
@@ -184,11 +184,11 @@ class SysNodeCLI:
             if 1 <= selection <= len(active_peers):
                 return active_peers[selection - 1]
             else:
-                print("⚠️ Selección inválida.")
+                print("[WARNING] Selección inválida.")
                 input("Presioná Enter para continuar...")
                 return None
         except ValueError:
-            print("⚠️ Entrada no válida.")
+            print("[WARNING] Entrada no válida.")
             input("Presioná Enter para continuar...")
             return None
 
@@ -207,10 +207,10 @@ class SysNodeCLI:
         if success:
             import datetime
             time_only = datetime.datetime.now().strftime("%H:%M:%S")
-            self._add_to_history(f"[{time_only}] 📤 [{self.core.node_name} -> {peer['hostname']}]: {text}")
-            print(f"✅ ¡Texto entregado con éxito a {peer['hostname']}!: {msg}")
+            self._add_to_history(f"[{time_only}] [OUT] [{self.core.node_name} -> {peer['hostname']}]: {text}")
+            print(f"[OK] ¡Texto entregado con éxito a {peer['hostname']}!: {msg}")
         else:
-            print(f"❌ Error entregando texto a {peer['hostname']}: {msg}")
+            print(f"[FAIL] Error entregando texto a {peer['hostname']}: {msg}")
             
         input("\nPresioná Enter para volver al menú...")
 
@@ -230,11 +230,11 @@ class SysNodeCLI:
             if 1 <= cmd_choice <= len(cmd_keys):
                 selected_cmd = cmd_keys[cmd_choice - 1]
             else:
-                print("⚠️ Opción no válida.")
+                print("[WARNING] Opción no válida.")
                 input("Presioná Enter para continuar...")
                 return
         except ValueError:
-            print("⚠️ Entrada no válida.")
+            print("[WARNING] Entrada no válida.")
             input("Presioná Enter para continuar...")
             return
 
@@ -242,9 +242,9 @@ class SysNodeCLI:
         success, result = self.core.send_command_to_peer(peer["node_id"], selected_cmd)
 
         if success:
-            print(f"✅ Respuesta remota del nodo: {result}")
+            print(f"[OK] Respuesta remota del nodo: {result}")
         else:
-            print(f"❌ Error al ejecutar comando remoto: {result}")
+            print(f"[FAIL] Error al ejecutar comando remoto: {result}")
 
         input("\nPresioná Enter para volver al menú...")
 
@@ -258,7 +258,7 @@ class SysNodeCLI:
         file_path = file_path.strip("'\"")
 
         if not file_path or not os.path.exists(file_path):
-            print("⚠️ El archivo ingresado no existe.")
+            print("[WARNING] El archivo ingresado no existe.")
             input("Presioná Enter para continuar...")
             return
 
@@ -280,9 +280,9 @@ class SysNodeCLI:
 
         print("\n")
         if success:
-            print(f"✅ {result}")
+            print(f"[OK] {result}")
         else:
-            print(f"❌ Error enviando archivo: {result}")
+            print(f"[FAIL] Error enviando archivo: {result}")
 
         input("\nPresioná Enter para volver al menú...")
 
@@ -298,10 +298,10 @@ class SysNodeCLI:
             try:
                 port = int(port_str)
             except ValueError:
-                print("⚠️ Puerto inválido. Se usará 50001.")
+                print("[WARNING] Puerto inválido. Se usará 50001.")
         
         self.core.add_manual_peer(ip, port)
-        print(f"✅ Nodo {ip}:{port} añadido manualmente. Ahora podés seleccionarlo en el menú de envío.")
+        print(f"[OK] Nodo {ip}:{port} añadido manualmente. Ahora podés seleccionarlo en el menú de envío.")
         input("\nPresioná Enter para volver al menú...")
 
 def run_cli(node_core: SysNodeCore):

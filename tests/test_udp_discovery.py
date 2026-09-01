@@ -4,7 +4,7 @@ Test de Integración para la Fase 1: Descubrimiento UDP entre 2 Nodos SysNodeCor
 
 import time
 import unittest
-from src.core.sysnode_core import SysNodeCore
+from sysnode.core.sysnode_core import SysNodeCore
 
 
 class TestUDPDiscovery(unittest.TestCase):

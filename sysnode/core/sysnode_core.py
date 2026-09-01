@@ -8,13 +8,13 @@ import logging
 import threading
 from typing import Dict, Any, Tuple
 
-from src.config import DEFAULT_TCP_PORT, HOST_NAME
-from src.network.utils import get_local_lan_ip
-from src.network.udp_beacon import UDPBeacon
-from src.network.udp_listener import UDPListener
-from src.network.tcp_server import TCPServer
-from src.network.tcp_client import TCPClient
-from src.core.database import SysNodeDatabase
+from sysnode.config import DEFAULT_TCP_PORT, HOST_NAME
+from sysnode.network.utils import get_local_lan_ip
+from sysnode.network.udp_beacon import UDPBeacon
+from sysnode.network.udp_listener import UDPListener
+from sysnode.network.tcp_server import TCPServer
+from sysnode.network.tcp_client import TCPClient
+from sysnode.core.database import SysNodeDatabase
 import os
 
 logger = logging.getLogger(__name__)
