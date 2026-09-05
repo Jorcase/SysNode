@@ -81,9 +81,40 @@ class SysNodeCore:
             
             self.db.save_message(node_id, text, "IN")
 
+        # Interceptar descubrimiento de nodos para sincronizar mensajes pendientes
+        if event_dict.get("event") == "PEER_DISCOVERED":
+            node_id = event_dict.get("node_id")
+            if node_id:
+                threading.Thread(target=self.sync_pending_messages, args=(node_id,), daemon=True).start()
+
         with self._broker_lock:
             for q in self.event_queues:
                 q.put(event_dict)
+
+    def sync_pending_messages(self, node_id: str):
+        """Intenta enviar los mensajes pendientes a un nodo recién conectado."""
+        pending = self.db.get_pending_messages(node_id)
+        if not pending:
+            return
+            
+        logger.info(f"Sincronizando {len(pending)} mensajes pendientes para {node_id}")
+        peers = self.get_active_peers()
+        peer = peers.get(node_id)
+        if not peer:
+            return
+            
+        for msg_id, text in pending:
+            success, _ = TCPClient.send_text(
+                peer_ip=peer["ip"],
+                peer_port=peer["tcp_port"],
+                sender_id=self.node_id,
+                sender_name=self.node_name,
+                text=text
+            )
+            if success:
+                self.db.mark_message_delivered(msg_id)
+                # Notificar a la UI
+                self.broadcast_event({"event": "MESSAGE_DELIVERED", "node_id": node_id, "msg_id": msg_id})
 
     def start(self) -> None:
         """Inicia los componentes de red del nodo (UDP y TCP)."""
@@ -130,12 +161,16 @@ class SysNodeCore:
         self.udp_listener.add_manual_peer(ip, port)
 
     def send_text_to_peer(self, node_id: str, text: str) -> Tuple[bool, str]:
-        """Envía un texto al Shared Board de un nodo activo específico."""
+        """Envía un texto al Shared Board de un nodo activo, o lo encola si está offline."""
         peers = self.get_active_peers()
-        if node_id not in peers:
-            return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
+        peer = peers.get(node_id)
+        
+        if not peer:
+            # El nodo está offline, lo guardamos como pending
+            self.db.save_message(node_id, text, "OUT", status="pending")
+            logger.info(f"Nodo {node_id} offline. Mensaje guardado como pendiente.")
+            return True, "Mensaje guardado como pendiente (Nodo Offline)."
 
-        peer = peers[node_id]
         success, response = TCPClient.send_text(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
@@ -145,7 +180,10 @@ class SysNodeCore:
         )
         if success:
             self.db.register_device(node_id, peer["hostname"], peer.get("os", "Unknown"))
-            self.db.save_message(node_id, text, "OUT")
+            self.db.save_message(node_id, text, "OUT", status="delivered")
+        else:
+            self.db.save_message(node_id, text, "OUT", status="pending")
+            
         return success, response
 
     def send_command_to_peer(self, node_id: str, command_key: str) -> Tuple[bool, str]:

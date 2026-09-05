@@ -41,6 +41,7 @@ class SysNodeDatabase:
                         timestamp TEXT NOT NULL,
                         text TEXT NOT NULL,
                         direction TEXT NOT NULL,
+                        status TEXT DEFAULT 'delivered',
                         FOREIGN KEY (node_id) REFERENCES devices (node_id)
                     )
                 ''')
@@ -76,14 +77,20 @@ class SysNodeDatabase:
             ''', (node_id, hostname, os_type))
             conn.commit()
 
-    def save_message(self, node_id: str, text: str, direction: str):
+    def get_all_devices(self):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT node_id, hostname, os_type FROM devices")
+            return cursor.fetchall()
+
+    def save_message(self, node_id: str, text: str, direction: str, status: str = 'delivered'):
         try:
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO messages (node_id, timestamp, text, direction) VALUES (?, ?, ?, ?)",
-                    (node_id, now_str, text, direction)
+                    "INSERT INTO messages (node_id, timestamp, text, direction, status) VALUES (?, ?, ?, ?, ?)",
+                    (node_id, now_str, text, direction, status)
                 )
                 conn.commit()
         except Exception as e:
@@ -102,3 +109,25 @@ class SysNodeDatabase:
         except Exception as e:
             logger.error(f"[DB] Error obteniendo historial para {node_id}: {e}")
             return []
+
+    def get_pending_messages(self, node_id: str):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, text FROM messages 
+                    WHERE node_id = ? AND direction = 'OUT' AND status = 'pending' ORDER BY id ASC
+                ''', (node_id,))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"[DB] Error obteniendo mensajes pendientes para {node_id}: {e}")
+            return []
+
+    def mark_message_delivered(self, msg_id: int):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE messages SET status = 'delivered' WHERE id = ?", (msg_id,))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[DB] Error marcando mensaje como entregado: {e}")

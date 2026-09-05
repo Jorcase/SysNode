@@ -173,11 +173,23 @@ class SysNodeDesktopApp(ctk.CTk):
         
         self.chat_title.configure(text=f"Chat con: {hostname}")
         
+        # Remove unread badge if any
+        if node_id in getattr(self, 'unread_badges', {}):
+            self.unread_badges[node_id] = False
+            
         for n_id, frame in self.node_buttons.items():
             if n_id == node_id:
                 frame._select_btn.configure(fg_color="#2ECC71", text_color="black")
             else:
                 frame._select_btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
+                
+        # Ocultar o mostrar botón de comandos según el SO
+        if node_id in getattr(self, 'known_devices', {}):
+            os_type = self.known_devices[node_id].get('os_type', '')
+            if 'Android' in os_type or 'iOS' in os_type:
+                self.btn_cmd.grid_remove() # Ocultar Comandos
+            else:
+                self.btn_cmd.grid() # Mostrar Comandos
                 
         self.load_chat_history(node_id)
 
@@ -342,22 +354,29 @@ class SysNodeDesktopApp(ctk.CTk):
             
     def poll_event_queue(self):
         current_peers = self.core.get_active_peers()
+        all_db_devices = self.core.db.get_all_devices()
         
-        # Limpiar desconectados
-        for node_id in list(self.node_buttons.keys()):
-            if node_id not in current_peers:
-                self.node_buttons[node_id].destroy()
-                del self.node_buttons[node_id]
-                if self.selected_node_id == node_id:
-                    self.selected_node_id = None
-                    self.chat_title.configure(text="Dispositivo desconectado.")
-                    
-        # Agregar/Actualizar
+        if not hasattr(self, 'unread_badges'):
+            self.unread_badges = {}
+        if not hasattr(self, 'known_devices'):
+            self.known_devices = {}
+            
+        # Actualizar dispositivos conocidos
+        for node_id, hostname, os_type in all_db_devices:
+            self.known_devices[node_id] = {'hostname': hostname, 'os_type': os_type}
         for node_id, info in current_peers.items():
-            icon_os = "[PC]" if "Desktop" in info['os'] or "Windows" in info['os'] or "Linux" in info['os'] else "[Móvil]"
-            display_text = f"{icon_os} {info['hostname']} ({info['ip']})"
+            self.known_devices[node_id] = {'hostname': info['hostname'], 'os_type': info.get('os', 'Unknown')}
+            
+        # Renderizar en la UI
+        for node_id, info in self.known_devices.items():
+            is_online = node_id in current_peers
+            status_dot = "🟢" if is_online else "⚪"
+            unread_dot = "🔴" if self.unread_badges.get(node_id) else ""
+            icon_os = "[PC]" if "Desktop" in info['os_type'] or "Windows" in info['os_type'] or "Linux" in info['os_type'] else "[Móvil]"
+            
+            display_text = f"{status_dot} {icon_os} {info['hostname']} {unread_dot}"
+            
             if node_id not in self.node_buttons:
-                # Frame para el boton de seleccionar y el de eliminar
                 node_frame = ctk.CTkFrame(self.nodes_frame, fg_color="transparent")
                 node_frame.pack(pady=2, padx=2, fill="x")
                 
@@ -365,8 +384,8 @@ class SysNodeDesktopApp(ctk.CTk):
                                     command=lambda nid=node_id, hname=info['hostname']: self.on_node_select(nid, hname))
                 btn.pack(side="left", fill="x", expand=True, padx=(0, 2))
                 
-                # Botón Eliminar solo para nodos manuales
-                if info.get('manual'):
+                # Eliminar manual node (Si está online y tiene flag 'manual')
+                if is_online and current_peers[node_id].get('manual'):
                     btn_del = ctk.CTkButton(node_frame, text="X", width=25, fg_color="#C0392B", hover_color="#922B21",
                                             command=lambda nid=node_id: self.remove_manual_node(nid))
                     btn_del.pack(side="right")
@@ -395,14 +414,20 @@ class SysNodeDesktopApp(ctk.CTk):
         sender_id = event.get('sender_id')
         sender_name = event.get('sender_name', 'Desconocido')
         
-        # Si el evento es para el chat activo, lo mostramos. Si no, quizá mostrar una notificación
         if etype == "TEXT_RECEIVED":
             msg = event.get('text', '')
             if sender_id == self.selected_node_id:
                 self.append_to_chat(f"[Remoto]: {msg}")
             else:
-                # Opcional: mostrar un popup o marcador de "nuevo mensaje"
-                pass
+                if not hasattr(self, 'unread_badges'):
+                    self.unread_badges = {}
+                self.unread_badges[sender_id] = True
+                
+        elif etype == "MESSAGE_DELIVERED":
+            msg_id = event.get('msg_id')
+            if sender_id == self.selected_node_id or event.get('node_id') == self.selected_node_id:
+                # Opcional: mostrar un tilde azul o refrescar el chat
+                self.append_to_chat(f"[INFO] Mensaje pendiente enviado al nodo destino.", add_timestamp=False)
             
         elif etype == "COMMAND_RECEIVED":
             response = event.get('result', '')
