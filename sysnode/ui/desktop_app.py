@@ -43,10 +43,14 @@ class SysNodeDesktopApp(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
-        # Configurar minimización a bandeja
-        self.protocol("WM_DELETE_WINDOW", self.hide_window)
-        self.tray_icon = None
-        threading.Thread(target=self.setup_tray, daemon=True).start()
+        # Single Instance Lock
+        self.single_instance_sock = None
+        if not self.setup_single_instance():
+            import sys
+            logger.info("SysNode ya está corriendo. Despertando instancia previa...")
+            sys.exit(0)
+            
+        # Iniciar hilo de bandeja de sistema (System Tray)
         
         # Validar Perfil de Usuario
         self.check_user_profile()
@@ -56,6 +60,35 @@ class SysNodeDesktopApp(ctk.CTk):
         # Iniciar polling thread-safe de eventos
         self.after(100, self.poll_event_queue)
         
+    def setup_single_instance(self):
+        import socket
+        try:
+            self.single_instance_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.single_instance_sock.bind(('127.0.0.1', 50505))
+            self.single_instance_sock.listen(1)
+            threading.Thread(target=self.single_instance_listener, daemon=True).start()
+            return True
+        except OSError:
+            # Ya hay una instancia corriendo. Enviamos señal WAKEUP
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect(('127.0.0.1', 50505))
+                s.send(b'WAKEUP')
+                s.close()
+            except: pass
+            return False
+            
+    def single_instance_listener(self):
+        while True:
+            try:
+                conn, _ = self.single_instance_sock.accept()
+                data = conn.recv(1024)
+                if data == b'WAKEUP':
+                    self.show_window(None, None)
+                conn.close()
+            except:
+                break
+                
     def check_user_profile(self):
         username = self.core.db.get_local_username()
         if not username:
@@ -199,6 +232,49 @@ class SysNodeDesktopApp(ctk.CTk):
         self.clipboard_clear()
         self.clipboard_append(text)
         self.update() # Necesario en tkinter para registrar el clipboard
+
+    def append_image_to_chat(self, filepath, sender="Remoto", add_timestamp=True):
+        from PIL import Image
+        
+        msg_frame = ctk.CTkFrame(self.chat_scroll, fg_color=("gray85", "gray20"))
+        msg_frame.pack(fill="x", pady=2, padx=5)
+        
+        prefix = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{sender}]: " if add_timestamp else ""
+        
+        # Header del mensaje
+        lbl_header = ctk.CTkLabel(msg_frame, text=prefix + "Imagen compartida:", anchor="w")
+        lbl_header.pack(fill="x", padx=5, pady=(5, 0))
+        
+        try:
+            pil_img = Image.open(filepath)
+            # Redimensionar para miniatura manteniendo el aspect ratio
+            pil_img.thumbnail((300, 300))
+            my_image = ctk.CTkImage(light_image=pil_img, size=pil_img.size)
+            
+            image_label = ctk.CTkLabel(msg_frame, image=my_image, text="")
+            image_label.pack(pady=5, padx=5, anchor="w")
+        except Exception as e:
+            err_lbl = ctk.CTkLabel(msg_frame, text=f"[Error al cargar imagen: {e}]", text_color="red")
+            err_lbl.pack(pady=5)
+            
+        # Botón para abrir la imagen
+        btn_open = ctk.CTkButton(msg_frame, text="Abrir Archivo", width=100,
+                                 command=lambda f=filepath: self.open_file_default_app(f))
+        btn_open.pack(side="left", padx=5, pady=(0, 5))
+        
+        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        
+    def open_file_default_app(self, filepath):
+        import platform, subprocess
+        try:
+            if platform.system() == "Windows":
+                os.startfile(filepath)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", filepath])
+            else:
+                subprocess.Popen(["xdg-open", filepath])
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir el archivo: {e}")
 
     def on_node_select(self, node_id, hostname):
         self.selected_node_id = node_id
@@ -384,7 +460,11 @@ class SysNodeDesktopApp(ctk.CTk):
         
         if success:
             self.progress_bar.set(1.0)
-            self.append_to_chat(f"[INFO] Archivo enviado exitosamente: {os.path.basename(filepath)}")
+            ext = os.path.splitext(filepath)[1].lower()
+            if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
+                self.append_image_to_chat(filepath, sender="Yo")
+            else:
+                self.append_to_chat(f"[INFO] Archivo enviado exitosamente: {os.path.basename(filepath)}")
         else:
             self.progress_bar.set(0)
             self.append_to_chat(f"[ERROR] Error al enviar archivo: {err_msg}")
@@ -480,7 +560,11 @@ class SysNodeDesktopApp(ctk.CTk):
             success = event.get('success', False)
             if sender_id == self.selected_node_id:
                 if success:
-                    self.append_to_chat(f"[DOWNLOAD] Archivo guardado en:\n{filepath}")
+                    ext = os.path.splitext(filepath)[1].lower()
+                    if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
+                        self.append_image_to_chat(filepath, sender="Remoto")
+                    else:
+                        self.append_to_chat(f"[DOWNLOAD] Archivo guardado en:\n{filepath}")
                 else:
                     self.append_to_chat(f"[ERROR] Error al recibir archivo: {event.get('msg')}")
                 
@@ -495,9 +579,13 @@ class SysNodeDesktopApp(ctk.CTk):
                     self.after(2000, lambda: self.progress_bar.grid_forget())
 
     def hide_window(self):
-        self.withdraw()
         if self.tray_icon:
-            self.tray_icon.notify("SysNode sigue corriendo en segundo plano", "Minimizado")
+            self.withdraw()
+            try:
+                self.tray_icon.notify("SysNode sigue corriendo en segundo plano", "Minimizado")
+            except: pass
+        else:
+            self.on_closing()
             
     def show_window(self, icon, item):
         self.after(0, self.deiconify)
@@ -528,6 +616,9 @@ class SysNodeDesktopApp(ctk.CTk):
 
     def on_closing(self):
         logger.info("[UI] Cerrando la interfaz de escritorio...")
+        if hasattr(self, 'single_instance_sock') and self.single_instance_sock:
+            try: self.single_instance_sock.close()
+            except: pass
         self.core.stop()
         self.destroy()
         
