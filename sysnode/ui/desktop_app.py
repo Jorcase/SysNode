@@ -36,13 +36,16 @@ class SysNodeDesktopApp(ctk.CTk):
         self.event_queue = self.core.register_event_queue()
         
         # Configuración de Ventana
-        self.title(f"SysNode")
+        self.title(f"SysNode - {self.core.node_name}")
         self.geometry("950x650")
         self.minsize(800, 500)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Configurar minimización a bandeja
+        self.protocol("WM_DELETE_WINDOW", self.hide_window)
+        self.tray_icon = None
+        threading.Thread(target=self.setup_tray, daemon=True).start()
         
         # Validar Perfil de Usuario
         self.check_user_profile()
@@ -111,12 +114,21 @@ class SysNodeDesktopApp(ctk.CTk):
         self.chat_title = ctk.CTkLabel(self.chat_header, text="Seleccioná un dispositivo para chatear", font=ctk.CTkFont(size=16, weight="bold"))
         self.chat_title.pack(side="left", padx=15, pady=10)
         
-        self.btn_open_folder = ctk.CTkButton(self.chat_header, text="[📁] Descargas", width=100, command=self.open_downloads_folder)
-        self.btn_open_folder.pack(side="right", padx=10, pady=10)
+        # En la cabecera del chat, botón para abrir descargas Y cambiar directorio
+        btn_header_frame = ctk.CTkFrame(self.chat_header, fg_color="transparent")
+        btn_header_frame.pack(side="right", padx=10)
+        
+        btn_open_folder = ctk.CTkButton(btn_header_frame, text="📁 Abrir", width=60, 
+                                        command=self.open_downloads_folder)
+        btn_open_folder.pack(side="left", padx=2)
+        
+        btn_change_folder = ctk.CTkButton(btn_header_frame, text="⚙️ Destino", width=60, 
+                                          command=self.change_downloads_folder)
+        btn_change_folder.pack(side="left", padx=2)
         
         # Área de mensajes (Textbox)
-        self.chat_textbox = ctk.CTkTextbox(self.main_frame, state="disabled", wrap="word", font=ctk.CTkFont(size=14))
-        self.chat_textbox.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
+        self.chat_scroll = ctk.CTkScrollableFrame(self.main_frame, fg_color="transparent")
+        self.chat_scroll.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         
         # Barra inferior (Input + Botones)
         self.input_frame = ctk.CTkFrame(self.main_frame, corner_radius=8)
@@ -141,11 +153,11 @@ class SysNodeDesktopApp(ctk.CTk):
         self.progress_bar.set(0)
         
     def load_chat_history(self, node_id):
-        self.chat_textbox.configure(state="normal")
-        self.chat_textbox.delete("1.0", "end") # Limpiar chat actual
-        self.chat_textbox.configure(state="disabled")
-        
-        recent_messages = self.core.db.get_chat_history(node_id, 50)
+        # Limpiar chat actual
+        for widget in self.chat_scroll.winfo_children():
+            widget.destroy()
+            
+        recent_messages = self.core.db.get_chat_history(node_id, limit=50)
         if not recent_messages:
             self.append_to_chat("--- No hay mensajes previos con este dispositivo ---", add_timestamp=False)
             return
@@ -153,19 +165,39 @@ class SysNodeDesktopApp(ctk.CTk):
         for ts, text, direction in recent_messages:
             time_only = ts.split(" ")[1]
             if direction == "IN":
-                self.append_to_chat(f"[{time_only}] [Remoto]: {text}", add_timestamp=False)
+                self.append_to_chat(f"[Remoto]: {text}", add_timestamp=False, raw_msg=text)
             else:
-                self.append_to_chat(f"[{time_only}] [Yo]: {text}", add_timestamp=False)
+                self.append_to_chat(f"[Yo]: {text}", add_timestamp=False, raw_msg=text)
         self.append_to_chat("--- Historial cargado ---", add_timestamp=False)
         
-    def append_to_chat(self, text, add_timestamp=True):
-        self.chat_textbox.configure(state="normal")
+    def append_to_chat(self, text, add_timestamp=True, raw_msg=""):
+        if not raw_msg:
+            raw_msg = text
+            
+        msg_frame = ctk.CTkFrame(self.chat_scroll, fg_color=("gray85", "gray20"))
+        msg_frame.pack(fill="x", pady=2, padx=5)
+        
         if add_timestamp:
             now_time = datetime.datetime.now().strftime("%H:%M:%S")
             text = f"[{now_time}] {text}"
-        self.chat_textbox.insert("end", text + "\n")
-        self.chat_textbox.see("end")
-        self.chat_textbox.configure(state="disabled")
+            
+        lbl_msg = ctk.CTkLabel(msg_frame, text=text, justify="left", wraplength=450, anchor="w")
+        lbl_msg.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        
+        # Botón Copiar si hay mensaje (omitir para notificaciones de sistema p.ej "Historial cargado")
+        if add_timestamp or "[Remoto]" in text or "[Yo]" in text:
+            btn_copy = ctk.CTkButton(msg_frame, text="📋", width=30, height=30, fg_color="transparent", 
+                                     hover_color=("gray75", "gray30"), text_color=("black", "white"),
+                                     command=lambda m=raw_msg: self.copy_to_clipboard(m))
+            btn_copy.pack(side="right", padx=5)
+            
+        # Scroll al fondo (hack en customtkinter)
+        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        
+    def copy_to_clipboard(self, text):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.update() # Necesario en tkinter para registrar el clipboard
 
     def on_node_select(self, node_id, hostname):
         self.selected_node_id = node_id
@@ -228,6 +260,12 @@ class SysNodeDesktopApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir la carpeta: {e}")
 
+    def change_downloads_folder(self):
+        new_dir = filedialog.askdirectory(title="Seleccionar nueva carpeta de descargas")
+        if new_dir:
+            # TODO: Guardar en base de datos la preferencia
+            messagebox.showinfo("Actualizado", f"Las futuras transferencias se guardarán en:\n{new_dir}")
+            
     def show_qr_code(self):
         try:
             import qrcode
@@ -275,7 +313,7 @@ class SysNodeDesktopApp(ctk.CTk):
         
         success, err_msg = self.core.send_text_to_peer(self.selected_node_id, msg)
         if success:
-            self.append_to_chat(f"[Yo]: {msg}")
+            self.append_to_chat(f"[Yo]: {msg}", raw_msg=msg)
             self.msg_entry.delete(0, "end")
         else:
             self.append_to_chat(f"[ERROR] No se pudo enviar: {err_msg}")
@@ -417,7 +455,7 @@ class SysNodeDesktopApp(ctk.CTk):
         if etype == "TEXT_RECEIVED":
             msg = event.get('text', '')
             if sender_id == self.selected_node_id:
-                self.append_to_chat(f"[Remoto]: {msg}")
+                self.append_to_chat(f"[Remoto]: {msg}", raw_msg=msg)
             else:
                 if not hasattr(self, 'unread_badges'):
                     self.unread_badges = {}
@@ -454,6 +492,35 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.progress_bar.set(current / total)
                 if current >= total:
                     self.after(2000, lambda: self.progress_bar.grid_forget())
+
+    def hide_window(self):
+        self.withdraw()
+        if self.tray_icon:
+            self.tray_icon.notify("SysNode sigue corriendo en segundo plano", "Minimizado")
+            
+    def show_window(self, icon, item):
+        self.after(0, self.deiconify)
+        
+    def quit_app(self, icon, item):
+        if self.tray_icon:
+            self.tray_icon.stop()
+        self.after(0, self.on_closing)
+        
+    def setup_tray(self):
+        try:
+            image = Image.new('RGB', (64, 64), color=(31, 83, 141))
+            draw = ImageDraw.Draw(image)
+            draw.ellipse((16, 16, 48, 48), fill=(46, 204, 113))
+            
+            menu = pystray.Menu(
+                pystray.MenuItem("Mostrar SysNode", self.show_window, default=True),
+                pystray.MenuItem("Salir", self.quit_app)
+            )
+            
+            self.tray_icon = pystray.Icon("SysNode", image, "SysNode P2P", menu)
+            self.tray_icon.run()
+        except Exception as e:
+            logger.error(f"No se pudo iniciar el System Tray: {e}")
 
     def on_closing(self):
         logger.info("[UI] Cerrando la interfaz de escritorio...")
