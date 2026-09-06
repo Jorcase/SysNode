@@ -20,9 +20,16 @@ class SysNodeDatabase:
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS local_user (
                         id INTEGER PRIMARY KEY CHECK (id = 1),
-                        username TEXT NOT NULL
+                        username TEXT NOT NULL,
+                        downloads_path TEXT
                     )
                 ''')
+                
+                # Add downloads_path column if not exists (for backwards compatibility)
+                try:
+                    cursor.execute("ALTER TABLE local_user ADD COLUMN downloads_path TEXT")
+                except sqlite3.OperationalError:
+                    pass
                 
                 # Tabla de dispositivos conocidos
                 cursor.execute('''
@@ -64,6 +71,22 @@ class SysNodeDatabase:
                 INSERT INTO local_user (id, username) VALUES (1, ?)
                 ON CONFLICT(id) DO UPDATE SET username = excluded.username
             ''', (username,))
+            conn.commit()
+
+    def get_downloads_path(self):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT downloads_path FROM local_user WHERE id = 1")
+            row = cursor.fetchone()
+            return row[0] if row and row[0] else None
+
+    def set_downloads_path(self, path: str):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO local_user (id, username, downloads_path) VALUES (1, 'User', ?)
+                ON CONFLICT(id) DO UPDATE SET downloads_path = excluded.downloads_path
+            ''', (path,))
             conn.commit()
 
     def register_device(self, node_id: str, hostname: str, os_type: str = "Unknown"):

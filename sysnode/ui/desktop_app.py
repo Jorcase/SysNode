@@ -390,7 +390,7 @@ class SysNodeDesktopApp(ctk.CTk):
     def open_downloads_folder(self):
         import platform
         import subprocess
-        downloads_path = os.path.join(os.getcwd(), "SysNode_Received")
+        downloads_path = self.core.get_downloads_dir()
         os.makedirs(downloads_path, exist_ok=True)
         
         try:
@@ -403,28 +403,36 @@ class SysNodeDesktopApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir la carpeta: {e}")
 
-    def get_modern_file_dialog(self, mode="file", title="Seleccionar archivo"):
+    def get_modern_file_dialog(self, mode="file", title="Seleccionar archivo", initialdir=None):
         import platform, subprocess
-        if platform.system() == "Linux":
-            try:
-                cmd = ["zenity", "--file-selection", f"--title={title}"]
-                if mode == "directory": cmd.append("--directory")
-                res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                return res.stdout.strip()
-            except (subprocess.CalledProcessError, FileNotFoundError):
+        if not initialdir:
+            initialdir = self.core.get_downloads_dir()
+            
+        old_cwd = os.getcwd()
+        try:
+            if platform.system() == "Linux":
                 try:
-                    cmd = ["kdialog", "--getexistingdirectory" if mode == "directory" else "--getopenfilename", f"--title={title}"]
+                    cmd = ["zenity", "--file-selection", f"--title={title}", f"--filename={initialdir}/"]
+                    if mode == "directory": cmd.append("--directory")
                     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
                     return res.stdout.strip()
-                except (subprocess.CalledProcessError, FileNotFoundError): pass
-        if mode == "directory":
-            return filedialog.askdirectory(title=title)
-        return filedialog.askopenfilename(title=title)
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    try:
+                        cmd = ["kdialog", "--getexistingdirectory" if mode == "directory" else "--getopenfilename", initialdir, f"--title={title}"]
+                        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                        return res.stdout.strip()
+                    except (subprocess.CalledProcessError, FileNotFoundError): pass
+            if mode == "directory":
+                return filedialog.askdirectory(title=title, initialdir=initialdir)
+            return filedialog.askopenfilename(title=title, initialdir=initialdir)
+        finally:
+            # Tkinter filedialog on Windows/Linux sometimes changes the CWD! We MUST restore it
+            os.chdir(old_cwd)
 
     def change_downloads_folder(self):
         new_dir = self.get_modern_file_dialog(mode="directory", title="Seleccionar nueva carpeta de descargas")
         if new_dir:
-            # TODO: Guardar en base de datos la preferencia
+            self.core.db.set_downloads_path(new_dir)
             messagebox.showinfo("Actualizado", f"Las futuras transferencias se guardarán en:\n{new_dir}")
             
     def show_qr_code(self):
@@ -557,7 +565,17 @@ class SysNodeDesktopApp(ctk.CTk):
             
     def poll_event_queue(self):
         current_peers = self.core.get_active_peers()
-        all_db_devices = self.core.db.get_all_devices()
+        
+        try:
+            all_db_devices = self.core.db.get_all_devices()
+        except Exception as e:
+            logger.error(f"[UI] DB query failed, attempting recovery... {e}")
+            try:
+                self.core.db._init_db()
+                all_db_devices = self.core.db.get_all_devices()
+            except Exception as e2:
+                logger.error(f"[UI] Unrecoverable DB error: {e2}")
+                all_db_devices = []
         
         if not hasattr(self, 'unread_badges'):
             self.unread_badges = {}

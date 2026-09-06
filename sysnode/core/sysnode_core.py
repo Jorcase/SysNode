@@ -56,10 +56,15 @@ class SysNodeCore:
         self.tcp_server = TCPServer(
             tcp_port=self.tcp_port,
             event_callback=self.broadcast_event,
-            node_name=self.node_name
+            node_name=self.node_name,
+            download_dir_getter=self.get_downloads_dir
         )
 
         self._running = False
+
+    def get_downloads_dir(self):
+        saved = self.db.get_downloads_path()
+        return saved if saved else os.path.abspath("SysNode_Received")
 
     def register_event_queue(self) -> queue.Queue:
         """Registra una nueva cola de eventos para un suscriptor y la devuelve."""
