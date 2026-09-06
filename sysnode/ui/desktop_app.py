@@ -206,7 +206,7 @@ class SysNodeDesktopApp(ctk.CTk):
                 if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
                     self.append_image_to_chat(filepath, sender=sender_str, add_timestamp=False)
                 else:
-                    self.append_to_chat(f"[{sender_str}]: [DOWNLOAD] Archivo en:\n{filepath}", add_timestamp=False, raw_msg=text)
+                    self.append_generic_file_to_chat(filepath, sender=sender_str, add_timestamp=False)
             else:
                 self.append_to_chat(f"[{sender_str}]: {text}", add_timestamp=False, raw_msg=text)
                 
@@ -284,6 +284,64 @@ class SysNodeDesktopApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir el archivo: {e}")
 
+    def open_file_location(self, filepath):
+        import platform, subprocess
+        folder = os.path.dirname(filepath)
+        try:
+            if platform.system() == "Windows":
+                subprocess.Popen(['explorer', '/select,', filepath])
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", "-R", filepath])
+            else:
+                subprocess.Popen(["xdg-open", folder])
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir la ubicación: {e}")
+
+    def append_generic_file_to_chat(self, filepath, sender="Remoto", add_timestamp=True):
+        from PIL import Image, ImageDraw, ImageFont
+        
+        msg_frame = ctk.CTkFrame(self.chat_scroll, fg_color=("gray85", "gray20"))
+        msg_frame.pack(fill="x", pady=2, padx=5)
+        
+        prefix = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{sender}]: " if add_timestamp else ""
+        lbl_header = ctk.CTkLabel(msg_frame, text=prefix + "Archivo compartido:", anchor="w")
+        lbl_header.pack(fill="x", padx=5, pady=(5, 0))
+        
+        filename = os.path.basename(filepath)
+        ext = os.path.splitext(filename)[1].upper() or "FILE"
+        if len(ext) > 1 and ext.startswith("."): ext = ext[1:]
+        
+        try:
+            img = Image.new('RGBA', (80, 80), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            color = "#E74C3C" if ext == "PDF" else ("#2980B9" if ext in ["DOC", "DOCX"] else "#7F8C8D")
+            draw.rectangle((15, 10, 65, 70), fill=color)
+            draw.polygon([(50, 10), (65, 10), (65, 25)], fill="white")
+            my_image = ctk.CTkImage(light_image=img, size=(50, 50))
+            
+            file_info_frame = ctk.CTkFrame(msg_frame, fg_color="transparent")
+            file_info_frame.pack(fill="x", padx=10, pady=5)
+            lbl_icon = ctk.CTkLabel(file_info_frame, image=my_image, text="")
+            lbl_icon.pack(side="left", padx=(0, 10))
+            lbl_name = ctk.CTkLabel(file_info_frame, text=filename, font=ctk.CTkFont(weight="bold"))
+            lbl_name.pack(side="left")
+        except Exception:
+            lbl_name = ctk.CTkLabel(msg_frame, text=f"[DOCUMENTO] {filename}", font=ctk.CTkFont(weight="bold"))
+            lbl_name.pack(padx=10, pady=5, anchor="w")
+        
+        btn_frame = ctk.CTkFrame(msg_frame, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=5, pady=(0, 5))
+        
+        btn_open = ctk.CTkButton(btn_frame, text="Abrir Archivo", width=100,
+                                 command=lambda f=filepath: self.open_file_default_app(f))
+        btn_open.pack(side="left", padx=5)
+        
+        btn_folder = ctk.CTkButton(btn_frame, text="Ver en Carpeta", width=100, fg_color="#7F8C8D", hover_color="#95A5A6",
+                                   command=lambda f=filepath: self.open_file_location(f))
+        btn_folder.pack(side="left", padx=5)
+        
+        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+
     def on_node_select(self, node_id, hostname):
         self.selected_node_id = node_id
         logger.info(f"[UI] Dispositivo seleccionado: {hostname} ({node_id[:8]})")
@@ -345,8 +403,26 @@ class SysNodeDesktopApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir la carpeta: {e}")
 
+    def get_modern_file_dialog(self, mode="file", title="Seleccionar archivo"):
+        import platform, subprocess
+        if platform.system() == "Linux":
+            try:
+                cmd = ["zenity", "--file-selection", f"--title={title}"]
+                if mode == "directory": cmd.append("--directory")
+                res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                return res.stdout.strip()
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                try:
+                    cmd = ["kdialog", "--getexistingdirectory" if mode == "directory" else "--getopenfilename", f"--title={title}"]
+                    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    return res.stdout.strip()
+                except (subprocess.CalledProcessError, FileNotFoundError): pass
+        if mode == "directory":
+            return filedialog.askdirectory(title=title)
+        return filedialog.askopenfilename(title=title)
+
     def change_downloads_folder(self):
-        new_dir = filedialog.askdirectory(title="Seleccionar nueva carpeta de descargas")
+        new_dir = self.get_modern_file_dialog(mode="directory", title="Seleccionar nueva carpeta de descargas")
         if new_dir:
             # TODO: Guardar en base de datos la preferencia
             messagebox.showinfo("Actualizado", f"Las futuras transferencias se guardarán en:\n{new_dir}")
@@ -455,7 +531,7 @@ class SysNodeDesktopApp(ctk.CTk):
         node = peers.get(self.selected_node_id)
         if not node: return
         
-        filepath = filedialog.askopenfilename(title="Seleccionar archivo")
+        filepath = self.get_modern_file_dialog(mode="file", title="Seleccionar archivo")
         if not filepath: return
         
         self.progress_bar.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
@@ -472,7 +548,7 @@ class SysNodeDesktopApp(ctk.CTk):
             if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
                 self.append_image_to_chat(filepath, sender="Yo")
             else:
-                self.append_to_chat(f"[INFO] Archivo enviado exitosamente: {os.path.basename(filepath)}")
+                self.append_generic_file_to_chat(filepath, sender="Yo")
         else:
             self.progress_bar.set(0)
             self.append_to_chat(f"[ERROR] Error al enviar archivo: {err_msg}")
@@ -596,7 +672,7 @@ class SysNodeDesktopApp(ctk.CTk):
                     if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
                         self.append_image_to_chat(filepath, sender="Remoto")
                     else:
-                        self.append_to_chat(f"[DOWNLOAD] Archivo guardado en:\n{filepath}")
+                        self.append_generic_file_to_chat(filepath, sender="Remoto")
                 else:
                     self.append_to_chat(f"[ERROR] Error al recibir archivo: {event.get('msg')}")
                 
