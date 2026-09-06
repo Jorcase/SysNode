@@ -19,6 +19,7 @@ except ImportError:
     pass
 
 try:
+    import threading
     import customtkinter as ctk
 except ImportError:
     print("[ERROR] La biblioteca 'customtkinter' no está instalada.")
@@ -508,6 +509,9 @@ class SysNodeDesktopApp(ctk.CTk):
         
     def setup_tray(self):
         try:
+            import pystray
+            from PIL import Image, ImageDraw
+            
             image = Image.new('RGB', (64, 64), color=(31, 83, 141))
             draw = ImageDraw.Draw(image)
             draw.ellipse((16, 16, 48, 48), fill=(46, 204, 113))
