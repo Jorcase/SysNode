@@ -152,11 +152,11 @@ class SysNodeDesktopApp(ctk.CTk):
         btn_header_frame = ctk.CTkFrame(self.chat_header, fg_color="transparent")
         btn_header_frame.pack(side="right", padx=10)
         
-        btn_open_folder = ctk.CTkButton(btn_header_frame, text="📁 Abrir", width=60, 
+        btn_open_folder = ctk.CTkButton(btn_header_frame, text="Abrir Carpeta", width=60, 
                                         command=self.open_downloads_folder)
         btn_open_folder.pack(side="left", padx=2)
         
-        btn_change_folder = ctk.CTkButton(btn_header_frame, text="⚙️ Destino", width=60, 
+        btn_change_folder = ctk.CTkButton(btn_header_frame, text="Cambiar Ruta", width=60, 
                                           command=self.change_downloads_folder)
         btn_change_folder.pack(side="left", padx=2)
         
@@ -179,7 +179,7 @@ class SysNodeDesktopApp(ctk.CTk):
         self.btn_attach = ctk.CTkButton(self.input_frame, text="[📎] Archivo", width=80, fg_color="#2c3e50", command=self.select_and_send_file)
         self.btn_attach.grid(row=0, column=2, padx=(0, 10), pady=10)
         
-        self.btn_cmd = ctk.CTkButton(self.input_frame, text="[⚡] Comando", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.open_command_menu)
+        self.btn_cmd = ctk.CTkButton(self.input_frame, text="Comandos", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.open_command_menu)
         self.btn_cmd.grid(row=0, column=3, padx=(0, 10), pady=10)
 
         # Progress bar oculta por defecto
@@ -198,10 +198,18 @@ class SysNodeDesktopApp(ctk.CTk):
             
         for ts, text, direction in recent_messages:
             time_only = ts.split(" ")[1]
-            if direction == "IN":
-                self.append_to_chat(f"[Remoto]: {text}", add_timestamp=False, raw_msg=text)
+            sender_str = "Remoto" if direction == "IN" else "Yo"
+            
+            if text.startswith("FILE:"):
+                filepath = text.split("FILE:")[1]
+                ext = os.path.splitext(filepath)[1].lower()
+                if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
+                    self.append_image_to_chat(filepath, sender=sender_str, add_timestamp=False)
+                else:
+                    self.append_to_chat(f"[{sender_str}]: [DOWNLOAD] Archivo en:\n{filepath}", add_timestamp=False, raw_msg=text)
             else:
-                self.append_to_chat(f"[Yo]: {text}", add_timestamp=False, raw_msg=text)
+                self.append_to_chat(f"[{sender_str}]: {text}", add_timestamp=False, raw_msg=text)
+                
         self.append_to_chat("--- Historial cargado ---", add_timestamp=False)
         
     def append_to_chat(self, text, add_timestamp=True, raw_msg=""):
@@ -220,7 +228,7 @@ class SysNodeDesktopApp(ctk.CTk):
         
         # Botón Copiar si hay mensaje (omitir para notificaciones de sistema p.ej "Historial cargado")
         if add_timestamp or "[Remoto]" in text or "[Yo]" in text:
-            btn_copy = ctk.CTkButton(msg_frame, text="📋", width=30, height=30, fg_color="transparent", 
+            btn_copy = ctk.CTkButton(msg_frame, text="Copiar", width=50, height=30, fg_color="transparent", 
                                      hover_color=("gray75", "gray30"), text_color=("black", "white"),
                                      command=lambda m=raw_msg: self.copy_to_clipboard(m))
             btn_copy.pack(side="right", padx=5)
@@ -480,6 +488,20 @@ class SysNodeDesktopApp(ctk.CTk):
         if not hasattr(self, 'known_devices'):
             self.known_devices = {}
             
+        # Generar íconos de estado en memoria (para no usar emojis)
+        from PIL import Image, ImageDraw
+        def create_circle_icon(color):
+            img = Image.new('RGBA', (20, 20), (255, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            draw.ellipse((4, 4, 16, 16), fill=color)
+            return ctk.CTkImage(light_image=img, size=(12, 12))
+            
+        if not hasattr(self, 'icon_online'):
+            self.icon_online = create_circle_icon("#2ECC71") # Verde
+            self.icon_offline = create_circle_icon("#95A5A6") # Gris
+            self.icon_unread = create_circle_icon("#E74C3C") # Rojo
+            self.icon_empty = create_circle_icon((0,0,0,0)) # Transparente
+
         # Actualizar dispositivos conocidos
         for node_id, hostname, os_type in all_db_devices:
             self.known_devices[node_id] = {'hostname': hostname, 'os_type': os_type}
@@ -489,19 +511,26 @@ class SysNodeDesktopApp(ctk.CTk):
         # Renderizar en la UI
         for node_id, info in self.known_devices.items():
             is_online = node_id in current_peers
-            status_dot = "🟢" if is_online else "⚪"
-            unread_dot = "🔴" if self.unread_badges.get(node_id) else ""
-            icon_os = "[PC]" if "Desktop" in info['os_type'] or "Windows" in info['os_type'] or "Linux" in info['os_type'] else "[Móvil]"
             
-            display_text = f"{status_dot} {icon_os} {info['hostname']} {unread_dot}"
+            icon_os = "[PC]" if "Desktop" in info['os_type'] or "Windows" in info['os_type'] or "Linux" in info['os_type'] else "[Móvil]"
+            display_text = f"{icon_os} {info['hostname']}"
             
             if node_id not in self.node_buttons:
                 node_frame = ctk.CTkFrame(self.nodes_frame, fg_color="transparent")
                 node_frame.pack(pady=2, padx=2, fill="x")
                 
-                btn = ctk.CTkButton(node_frame, text=display_text, anchor="w",
+                # Indicador de estado
+                status_lbl = ctk.CTkLabel(node_frame, text="", image=self.icon_online if is_online else self.icon_offline, width=15)
+                status_lbl.pack(side="left", padx=(5, 0))
+                
+                # Botón principal
+                btn = ctk.CTkButton(node_frame, text=display_text, anchor="w", fg_color="transparent",
                                     command=lambda nid=node_id, hname=info['hostname']: self.on_node_select(nid, hname))
-                btn.pack(side="left", fill="x", expand=True, padx=(0, 2))
+                btn.pack(side="left", fill="x", expand=True, padx=(5, 2))
+                
+                # Indicador de no leído
+                unread_lbl = ctk.CTkLabel(node_frame, text="", image=self.icon_unread if self.unread_badges.get(node_id) else self.icon_empty, width=15)
+                unread_lbl.pack(side="left", padx=(0, 5))
                 
                 # Eliminar manual node (Si está online y tiene flag 'manual')
                 if is_online and current_peers[node_id].get('manual'):
@@ -511,9 +540,12 @@ class SysNodeDesktopApp(ctk.CTk):
                     
                 self.node_buttons[node_id] = node_frame
                 self.node_buttons[node_id]._select_btn = btn
+                self.node_buttons[node_id]._status_lbl = status_lbl
+                self.node_buttons[node_id]._unread_lbl = unread_lbl
             else:
-                if self.node_buttons[node_id]._select_btn.cget("text") != display_text:
-                    self.node_buttons[node_id]._select_btn.configure(text=display_text)
+                self.node_buttons[node_id]._select_btn.configure(text=display_text)
+                self.node_buttons[node_id]._status_lbl.configure(image=self.icon_online if is_online else self.icon_offline)
+                self.node_buttons[node_id]._unread_lbl.configure(image=self.icon_unread if self.unread_badges.get(node_id) else self.icon_empty)
                     
         while True:
             try:

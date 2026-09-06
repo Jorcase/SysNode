@@ -188,6 +188,7 @@ class TCPClientHandlerThread(threading.Thread):
 
                 self.event_callback({
                     "event": "FILE_RECEIVED",
+                    "sender_id": sender_id,
                     "sender_name": sender_name,
                     "peer_ip": self.peer_ip,
                     "filename": clean_filename,

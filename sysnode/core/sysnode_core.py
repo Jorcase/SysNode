@@ -80,8 +80,15 @@ class SysNodeCore:
             self.db.register_device(node_id, sender_name, "Unknown")
             
             self.db.save_message(node_id, text, "IN")
-
-        # Interceptar descubrimiento de nodos para sincronizar mensajes pendientes
+            
+        elif event_dict.get("event") == "FILE_RECEIVED":
+            node_id = event_dict.get("sender_id", "unknown")
+            filepath = event_dict.get("filepath", "")
+            success = event_dict.get("success", False)
+            
+            if success and filepath:
+                # El texto que se guarda en la base de datos es la ruta al archivo con el prefijo FILE:
+                self.db.save_message(node_id, f"FILE:{filepath}", "IN")
         if event_dict.get("event") == "PEER_DISCOVERED":
             node_id = event_dict.get("node_id")
             if node_id:
@@ -208,7 +215,7 @@ class SysNodeCore:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
 
         peer = peers[node_id]
-        return TCPClient.send_file(
+        success, msg = TCPClient.send_file(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
@@ -216,6 +223,9 @@ class SysNodeCore:
             file_path=file_path,
             progress_callback=progress_callback
         )
+        if success:
+            self.db.save_message(node_id, f"FILE:{file_path}", "OUT", status="delivered")
+        return success, msg
 
     def is_running(self) -> bool:
         return self._running
