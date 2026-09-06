@@ -64,7 +64,8 @@ class TCPServer(threading.Thread):
                     client_sock=client_sock,
                     peer_ip=peer_ip,
                     event_callback=self.event_callback,
-                    node_name=self.node_name
+                    node_name=self.node_name,
+                    download_dir_getter=self.download_dir_getter
                 )
                 handler.start()
 
@@ -90,12 +91,13 @@ class TCPClientHandlerThread(threading.Thread):
     Recibe la trama con framing, determina la acción y responde si corresponde.
     """
 
-    def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_name: str = None):
+    def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_name: str = None, download_dir_getter=None):
         super().__init__(daemon=True, name=f"TCPWorker-{peer_ip}")
         self.client_sock = client_sock
         self.peer_ip = peer_ip
         self.event_callback = event_callback
         self.node_name = node_name
+        self.download_dir_getter = download_dir_getter
 
     def run(self) -> None:
         try:
