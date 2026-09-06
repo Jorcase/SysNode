@@ -28,11 +28,12 @@ class TCPServer(threading.Thread):
     Por cada cliente aceptado, delega la atención a un hilo TCPClientHandlerThread.
     """
 
-    def __init__(self, tcp_port: int, event_callback, node_name: str = None):
+    def __init__(self, tcp_port: int, event_callback, node_name: str = None, download_dir_getter=None):
         super().__init__(daemon=True, name="TCPServerThread")
         self.tcp_port = tcp_port
         self.event_callback = event_callback
         self.node_name = node_name or "NodoLocal"
+        self.download_dir_getter = download_dir_getter
         self._stop_event = threading.Event()
         self.running = False
         self.server_sock = None
@@ -154,7 +155,8 @@ class TCPClientHandlerThread(threading.Thread):
                 sha256 = payload.get("sha256", "")
 
                 clean_filename = sanitize_filename(raw_filename)
-                received_dir = os.path.abspath("SysNode_Received")
+                received_dir = self.download_dir_getter() if self.download_dir_getter else os.path.abspath("SysNode_Received")
+                os.makedirs(received_dir, exist_ok=True)
                 temp_path = os.path.join(received_dir, f"{clean_filename}.tmp")
                 final_path = os.path.join(received_dir, clean_filename)
 
