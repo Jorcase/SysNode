@@ -13,6 +13,7 @@ echo "Compilando SysNode Desktop con PyInstaller..."
 # --add-data: Incluir iconos y carpeta web
 pyinstaller --onefile --noconsole \
     --name sysnode \
+    --hidden-import PIL._tkinter_finder \
     --add-data "sysnode/ui/assets/icons:sysnode/ui/assets/icons" \
     --add-data "sysnode/web:sysnode/web" \
     main.py

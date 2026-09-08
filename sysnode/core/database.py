@@ -251,6 +251,24 @@ class SysNodeDatabase:
             logger.error(f"[DB] Error obteniendo historial para {node_id}: {e}")
             return []
 
+    def delete_message(self, msg_uuid: str):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM messages WHERE msg_uuid = ?", (msg_uuid,))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[DB] Error borrando mensaje {msg_uuid}: {e}")
+            
+    def clear_chat_history(self, node_id: str):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM messages WHERE node_id = ?", (node_id,))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[DB] Error limpiando chat de {node_id}: {e}")
+
     def get_pending_messages(self, node_id: str):
         try:
             with sqlite3.connect(self.db_path) as conn:

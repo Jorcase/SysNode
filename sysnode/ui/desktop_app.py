@@ -528,6 +528,10 @@ class SysNodeDesktopApp(ctk.CTk):
         btn_header_frame = ctk.CTkFrame(self.chat_header, fg_color="transparent")
         btn_header_frame.pack(side="right", padx=10)
         
+        btn_clear_chat = ctk.CTkButton(btn_header_frame, text=" Limpiar Chat", width=120, fg_color="#C0392B", hover_color="#922B21", 
+                                        command=self.clear_current_chat)
+        btn_clear_chat.pack(side="left", padx=2)
+        
         btn_open_folder = ctk.CTkButton(btn_header_frame, image=self.icons.get('folder'), text=" Abrir Descargas", width=120, fg_color="#34495E", hover_color="#2C3E50", 
                                         command=self.open_downloads_folder)
         btn_open_folder.pack(side="left", padx=2)
@@ -638,6 +642,20 @@ class SysNodeDesktopApp(ctk.CTk):
         self.core.stop_sharing_server()
         self.show_welcome()
         
+    def clear_current_chat(self):
+        if not self.selected_node_id:
+            return
+            
+        if messagebox.askyesno("Limpiar Chat", "¿Estás seguro de que querés borrar toda la conversación con este dispositivo?"):
+            self.core.db.clear_chat_history(self.selected_node_id)
+            self.load_chat_history(self.selected_node_id)
+            
+    def delete_single_message(self, msg_uuid):
+        if not msg_uuid: return
+        if messagebox.askyesno("Borrar Mensaje", "¿Seguro que querés borrar este mensaje?"):
+            self.core.db.delete_message(msg_uuid)
+            self.load_chat_history(self.selected_node_id)
+
     def load_chat_history(self, node_id):
         # Limpiar chat actual
         for widget in self.chat_scroll.winfo_children():
@@ -695,17 +713,28 @@ class SysNodeDesktopApp(ctk.CTk):
         
         # Botón Copiar si hay mensaje (omitir para notificaciones de sistema p.ej "Historial cargado")
         if add_timestamp or "[Remoto]" in text or "[Yo]" in text:
+            import tkinter as tk
+            
+            btn_options = ctk.CTkButton(msg_frame, text="⋮", width=30, height=30, fg_color="transparent", 
+                                        hover_color=("gray75", "gray30"), font=("Arial", 18, "bold"))
+            btn_options.pack(side="right", padx=2)
+            
+            def show_options_menu(e, u=msg_uuid, m=raw_msg, d=direction):
+                menu = tk.Menu(self, tearoff=0)
+                if d == "OUT":
+                    menu.add_command(label="Editar", command=lambda: self.prompt_edit_message(u, m))
+                menu.add_command(label="Borrar", command=lambda: self.delete_single_message(u))
+                menu.tk_popup(e.x_root, e.y_root)
+                
+            if msg_uuid:
+                btn_options.bind("<Button-1>", show_options_menu)
+            else:
+                btn_options.configure(state="disabled")
+            
             btn_copy = ctk.CTkButton(msg_frame, image=self.icons.get('copy'), text="", width=30, height=30, fg_color="transparent", 
                                      hover_color=("gray75", "gray30"),
                                      command=lambda m=raw_msg: self.copy_to_clipboard(m))
             btn_copy.pack(side="right", padx=5)
-            
-            # Botón Editar si el mensaje es nuestro
-            if direction == "OUT" and msg_uuid:
-                btn_edit = ctk.CTkButton(msg_frame, image=self.icons.get('edit'), text="", width=30, height=30, fg_color="transparent",
-                                         hover_color=("gray75", "gray30"),
-                                         command=lambda u=msg_uuid, m=raw_msg: self.prompt_edit_message(u, m))
-                btn_edit.pack(side="right", padx=2)
             
         # Scroll al fondo (hack en customtkinter)
         self.chat_scroll._parent_canvas.yview_moveto(1.0)
@@ -767,27 +796,39 @@ class SysNodeDesktopApp(ctk.CTk):
         self.chat_scroll._parent_canvas.yview_moveto(1.0)
         
     def open_file_default_app(self, filepath):
-        import platform, subprocess
+        import platform, subprocess, os
+        clean_env = os.environ.copy()
+        if "LD_LIBRARY_PATH_ORIG" in clean_env:
+            clean_env["LD_LIBRARY_PATH"] = clean_env["LD_LIBRARY_PATH_ORIG"]
+        else:
+            clean_env.pop("LD_LIBRARY_PATH", None)
+            
         try:
             if platform.system() == "Windows":
                 os.startfile(filepath)
             elif platform.system() == "Darwin":
-                subprocess.Popen(["open", filepath])
+                subprocess.Popen(["open", filepath], env=clean_env)
             else:
-                subprocess.Popen(["xdg-open", filepath])
+                subprocess.Popen(["xdg-open", filepath], env=clean_env)
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir el archivo: {e}")
 
     def open_file_location(self, filepath):
-        import platform, subprocess
+        import platform, subprocess, os
         folder = os.path.dirname(filepath)
+        clean_env = os.environ.copy()
+        if "LD_LIBRARY_PATH_ORIG" in clean_env:
+            clean_env["LD_LIBRARY_PATH"] = clean_env["LD_LIBRARY_PATH_ORIG"]
+        else:
+            clean_env.pop("LD_LIBRARY_PATH", None)
+            
         try:
             if platform.system() == "Windows":
                 subprocess.Popen(['explorer', '/select,', filepath])
             elif platform.system() == "Darwin":
-                subprocess.Popen(["open", "-R", filepath])
+                subprocess.Popen(["open", "-R", filepath], env=clean_env)
             else:
-                subprocess.Popen(["xdg-open", folder])
+                subprocess.Popen(["xdg-open", folder], env=clean_env)
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir la ubicación: {e}")
 
@@ -883,19 +924,26 @@ class SysNodeDesktopApp(ctk.CTk):
 
     def open_downloads_folder(self):
         import platform
-        import subprocess
+        import subprocess, os
         downloads_path = self.core.get_downloads_dir()
-        os.makedirs(downloads_path, exist_ok=True)
-        
+        if not os.path.exists(downloads_path):
+            os.makedirs(downloads_path, exist_ok=True)
+            
+        clean_env = os.environ.copy()
+        if "LD_LIBRARY_PATH_ORIG" in clean_env:
+            clean_env["LD_LIBRARY_PATH"] = clean_env["LD_LIBRARY_PATH_ORIG"]
+        else:
+            clean_env.pop("LD_LIBRARY_PATH", None)
+            
         try:
             if platform.system() == "Windows":
                 os.startfile(downloads_path)
             elif platform.system() == "Darwin":
-                subprocess.Popen(["open", downloads_path])
+                subprocess.Popen(["open", downloads_path], env=clean_env)
             else:
-                subprocess.Popen(["xdg-open", downloads_path])
+                subprocess.Popen(["xdg-open", downloads_path], env=clean_env)
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo abrir la carpeta: {e}")
+            messagebox.showerror("Error", f"No se pudo abrir la carpeta de descargas: {e}")
 
     def get_modern_file_dialog(self, mode="file", title="Seleccionar archivo", initialdir=None):
         import platform, subprocess
