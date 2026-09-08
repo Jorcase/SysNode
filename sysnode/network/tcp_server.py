@@ -170,6 +170,7 @@ class TCPClientHandlerThread(threading.Thread):
                 self.event_callback({
                     "event": "COMMAND_RECEIVED",
                     "command": command_key,
+                    "sender_id": sender_id,
                     "sender_name": sender_name,
                     "peer_ip": self.peer_ip,
                     "success": success,
@@ -201,6 +202,7 @@ class TCPClientHandlerThread(threading.Thread):
                 self.event_callback({
                     "event": "COMMAND_RECEIVED",
                     "command": bash_cmd,
+                    "sender_id": sender_id,
                     "sender_name": sender_name,
                     "peer_ip": self.peer_ip,
                     "success": success,

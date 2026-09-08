@@ -122,6 +122,21 @@ class SysNodeCore:
             if success and filepath:
                 # El texto que se guarda en la base de datos es la ruta al archivo con el prefijo FILE:
                 self.db.save_message(node_id, f"FILE:{filepath}", "IN")
+                
+        elif event_dict.get("event") == "COMMAND_RECEIVED":
+            node_id = event_dict.get("sender_id", "unknown")
+            cmd = event_dict.get("command", "")
+            result = event_dict.get("result", "")
+            success = event_dict.get("success", False)
+            
+            # Registrar dispositivo si no existe
+            sender_name = event_dict.get("sender_name", "Desconocido")
+            self.db.register_device(node_id, sender_name, "Unknown")
+            
+            # Guardamos el comando y su resultado como mensaje IN
+            status_text = "[OK]" if success else "[FAIL]"
+            self.db.save_message(node_id, f"CMD_RES:{status_text} Comando ejecutado: {cmd}\nResultado:\n{result}", "IN")
+            
         event_name = event_dict.get("event")
         if event_name in ["PEER_DISCOVERED", "PEER_UPDATED"]:
             node_id = event_dict.get("node_id", "")
@@ -303,13 +318,23 @@ class SysNodeCore:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
 
         peer = peers[node_id]
-        return TCPClient.send_command(
+        
+        # Save request to DB
+        self.db.save_message(node_id, f"CMD_REQ:{command_key}", "OUT", status="delivered")
+        
+        success, msg = TCPClient.send_command(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
             command_key=command_key
         )
+        
+        # Save response to DB
+        status_text = "[OK]" if success else "[FAIL]"
+        self.db.save_message(node_id, f"CMD_RES:{status_text} {msg}", "IN", status="delivered")
+        
+        return success, msg
 
     def send_bash_command_to_peer(self, node_id: str, bash_command: str) -> Tuple[bool, str]:
         """Envía una solicitud de ejecución de comando custom a un nodo activo."""
@@ -318,13 +343,23 @@ class SysNodeCore:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
 
         peer = peers[node_id]
-        return TCPClient.send_bash_command(
+        
+        # Save request to DB
+        self.db.save_message(node_id, f"CMD_REQ:Bash -> {bash_command}", "OUT", status="delivered")
+        
+        success, msg = TCPClient.send_bash_command(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
             bash_command=bash_command
         )
+        
+        # Save response to DB
+        status_text = "[OK]" if success else "[FAIL]"
+        self.db.save_message(node_id, f"CMD_RES:{status_text} {msg}", "IN", status="delivered")
+        
+        return success, msg
 
     def send_file_to_peer(self, node_id: str, file_path: str, progress_callback=None) -> Tuple[bool, str]:
         """Transmite un archivo binario local al nodo remoto activo sobre TCP."""

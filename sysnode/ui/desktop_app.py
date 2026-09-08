@@ -648,9 +648,12 @@ class SysNodeDesktopApp(ctk.CTk):
             self.append_to_chat("--- No hay mensajes previos con este dispositivo ---", add_timestamp=False)
             return
             
+        info = self.known_devices.get(node_id, {})
+        remote_name = info.get("hostname", "Remoto")
+            
         for msg_uuid, ts, text, direction in recent_messages:
             time_only = ts.split(" ")[1]
-            sender_str = "Remoto" if direction == "IN" else "Yo"
+            sender_str = remote_name if direction == "IN" else "Yo"
             
             if text.startswith("FILE:"):
                 filepath = text.split("FILE:")[1]
@@ -659,6 +662,18 @@ class SysNodeDesktopApp(ctk.CTk):
                     self.append_image_to_chat(filepath, sender=sender_str, add_timestamp=False)
                 else:
                     self.append_generic_file_to_chat(filepath, sender=sender_str, add_timestamp=False)
+            elif text.startswith("CMD_REQ:"):
+                cmd_txt = text.split("CMD_REQ:")[1]
+                if direction == "OUT":
+                    self.append_to_chat(f"[SysAdmin] Yo envié comando: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                else:
+                    self.append_to_chat(f"[SysAdmin] {sender_str} te envió un comando: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+            elif text.startswith("CMD_RES:"):
+                res_txt = text.split("CMD_RES:")[1]
+                if direction == "IN":
+                    self.append_to_chat(f"[SysAdmin] Resultado de {sender_str}: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                else:
+                    self.append_to_chat(f"[SysAdmin] Resultado enviado a {remote_name}: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
             else:
                 self.append_to_chat(f"[{sender_str}]: {text}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
                 
@@ -1048,17 +1063,23 @@ class SysNodeDesktopApp(ctk.CTk):
 
     def send_bash_cmd(self, bash_cmd):
         if not self.selected_node_id: return
-        self.append_to_chat(f"[EXEC] Enviando Bash: {bash_cmd}")
+        self.append_to_chat(f"[SysAdmin] Yo envié comando: {bash_cmd}")
         success, result_msg = self.core.send_bash_command_to_peer(self.selected_node_id, bash_cmd)
-        if not success:
-            self.append_to_chat(f"[ERROR] Falló bash: {result_msg}")
+        
+        status_icon = "[OK]" if success else "[FAIL]"
+        info = self.known_devices.get(self.selected_node_id, {})
+        remote_name = info.get("hostname", "Remoto")
+        self.append_to_chat(f"[SysAdmin] Resultado de {remote_name}: {status_icon} {result_msg}")
 
     def send_sysadmin_cmd(self, command):
         if not self.selected_node_id: return
-        self.append_to_chat(f"[EXEC] Enviando comando: {command}...")
+        self.append_to_chat(f"[SysAdmin] Yo envié comando: {command}")
         success, result_msg = self.core.send_command_to_peer(self.selected_node_id, command)
-        if not success:
-            self.append_to_chat(f"[ERROR] Falló comando: {result_msg}")
+        
+        status_icon = "[OK]" if success else "[FAIL]"
+        info = self.known_devices.get(self.selected_node_id, {})
+        remote_name = info.get("hostname", "Remoto")
+        self.append_to_chat(f"[SysAdmin] Resultado de {remote_name}: {status_icon} {result_msg}")
             
     def select_and_send_file(self):
         if not self.selected_node_id:
@@ -1268,7 +1289,7 @@ class SysNodeDesktopApp(ctk.CTk):
         if etype == "TEXT_RECEIVED":
             msg = event.get('text', '')
             if sender_id == self.selected_node_id:
-                self.append_to_chat(f"[Remoto]: {msg}", raw_msg=msg, direction="IN")
+                self.append_to_chat(f"[{sender_name}]: {msg}", raw_msg=msg, direction="IN")
                 if hasattr(self, 'unread_badges') and sender_id in self.unread_badges:
                     del self.unread_badges[sender_id]
             else:
@@ -1282,10 +1303,12 @@ class SysNodeDesktopApp(ctk.CTk):
             
         elif etype == "COMMAND_RECEIVED":
             response = event.get('result', '')
+            cmd = event.get('command', '')
             success = event.get('success', False)
             icon = "[OK]" if success else "[FAIL]"
             if sender_id == self.selected_node_id:
-                self.append_to_chat(f"[SysAdmin] {icon}: {response}")
+                self.append_to_chat(f"[SysAdmin] {sender_name} te envió un comando: {cmd}")
+                self.append_to_chat(f"[SysAdmin] Resultado enviado a {sender_name}: {icon} Comando ejecutado: {cmd}\nResultado:\n{response}")
             
         elif etype == "FILE_RECEIVED":
             filepath = event.get('filepath', '')
@@ -1294,9 +1317,9 @@ class SysNodeDesktopApp(ctk.CTk):
                 if success:
                     ext = os.path.splitext(filepath)[1].lower()
                     if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
-                        self.append_image_to_chat(filepath, sender="Remoto")
+                        self.append_image_to_chat(filepath, sender=sender_name)
                     else:
-                        self.append_generic_file_to_chat(filepath, sender="Remoto")
+                        self.append_generic_file_to_chat(filepath, sender=sender_name)
                 else:
                     self.append_to_chat(f"[ERROR] Error al recibir archivo: {event.get('msg')}")
                 
