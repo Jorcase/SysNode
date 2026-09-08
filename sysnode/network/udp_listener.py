@@ -145,26 +145,23 @@ class UDPListener(threading.Thread):
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
 
-    def add_manual_peer(self, ip: str, port: int) -> None:
-        """Añade un peer de forma manual (bypassing UDP). Se le asigna un ID sintético."""
-        import uuid
-        synthetic_id = f"manual_{uuid.uuid4().hex[:8]}"
-        
+    def add_manual_peer(self, ip: str, port: int, node_id: str, hostname: str, os_type: str) -> None:
+        """Añade un peer de forma manual (verificado por TCP)."""
         with self.peers_lock:
-            self.active_peers[synthetic_id] = {
-                "node_id": synthetic_id,
-                "hostname": f"Manual_{ip}",
-                "os": "unknown",
+            self.active_peers[node_id] = {
+                "node_id": node_id,
+                "hostname": hostname,
+                "os": os_type,
                 "ip": ip,
                 "tcp_port": port,
                 "last_seen": time.time(),
                 "manual": True
             }
             
-        logger.info(f"NUEVO NODO MANUAL AÑADIDO: {ip}:{port}")
+        logger.info(f"NUEVO NODO MANUAL AÑADIDO: {hostname} ({ip}:{port}) - ID: {node_id[:8]}")
         self.event_callback({
             "event": "PEER_DISCOVERED",
-            "peer": self.active_peers[synthetic_id]
+            "peer": self.active_peers[node_id]
         })
 
     def _cleanup_expired_peers(self, now: float) -> None:

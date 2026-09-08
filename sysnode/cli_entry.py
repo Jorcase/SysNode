@@ -24,7 +24,7 @@ def setup_logging(verbose: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(description="SysNode P2P Network Tool")
-    parser.add_argument("--name", type=str, default="SysNode-Default", help="Nombre lógico del nodo en la red")
+    parser.add_argument("--name", type=str, default=None, help="Nombre lógico del nodo en la red")
     parser.add_argument("--tcp-port", type=int, default=50001, help="Puerto TCP para transferencias (default: 50001)")
     parser.add_argument("--cli", action="store_true", help="Ejecutar en modo consola (CLI) sin interfaz gráfica")
     parser.add_argument("--verbose", action="store_true", help="Habilitar mensajes detallados de depuración")

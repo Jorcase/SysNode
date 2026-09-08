@@ -62,3 +62,5 @@ mobile_app/android/app/build/
 mobile_app/android/app/.cxx/
 mobile_app/.expo/
 mobile_app/**/*.apk
+sysnode/web/sysnode
+descargas/

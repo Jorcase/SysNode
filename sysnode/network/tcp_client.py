@@ -24,13 +24,51 @@ class TCPClient:
     """
 
     @staticmethod
-    def send_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, text: str) -> Tuple[bool, str]:
+    def send_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, text: str, msg_uuid: str = None) -> Tuple[bool, str]:
         """Envía un texto al Shared Board de un nodo remoto."""
         payload: Dict[str, Any] = {
             "action": ActionType.SHARE_TEXT,
             "sender_id": sender_id,
             "sender_name": sender_name,
             "payload": text
+        }
+        if msg_uuid:
+            payload["msg_uuid"] = msg_uuid
+            
+        return TCPClient._connect_and_send(peer_ip, peer_port, payload)
+
+    @staticmethod
+    def ping_node(peer_ip: str, peer_port: int, sender_id: str, sender_name: str) -> Tuple[bool, Dict[str, Any]]:
+        """Pings a remote node to retrieve its identity info."""
+        payload: Dict[str, Any] = {
+            "action": ActionType.PING_NODE,
+            "sender_id": sender_id,
+            "sender_name": sender_name
+        }
+        # Modified _connect_and_send behavior since we expect a JSON dictionary response back
+        # Actually _connect_and_send returns (success, error_msg_or_status), but we need the dict.
+        # Let's write a custom connection block.
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(SOCKET_TIMEOUT_SEC)
+                sock.connect((peer_ip, peer_port))
+                send_framed_message(sock, payload)
+                response = receive_framed_message(sock)
+                if response and response.get("status") == "OK":
+                    return True, response
+                return False, {}
+        except Exception as e:
+            return False, {}
+
+    @staticmethod
+    def edit_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, msg_uuid: str, new_text: str) -> Tuple[bool, str]:
+        """Solicita la edición de un mensaje previamente enviado al nodo remoto."""
+        payload: Dict[str, Any] = {
+            "action": ActionType.EDIT_MSG,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "msg_uuid": msg_uuid,
+            "new_text": new_text
         }
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 
@@ -42,6 +80,17 @@ class TCPClient:
             "sender_id": sender_id,
             "sender_name": sender_name,
             "command": command_key
+        }
+        return TCPClient._connect_and_send(peer_ip, peer_port, payload)
+
+    @staticmethod
+    def send_bash_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, bash_command: str) -> Tuple[bool, str]:
+        """Solicita la ejecución de un comando shell arbitrario (JSON custom) en un nodo remoto."""
+        payload: Dict[str, Any] = {
+            "action": ActionType.REMOTE_BASH_CMD,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "bash_command": bash_command
         }
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 

@@ -1,44 +1,56 @@
-# SysNode - Sistema P2P de Administración y Transferencia en Redes Locales
+# SysNode
 
-**SysNode** es un sistema peer-to-peer (P2P) híbrido desarrollado en Python puro sobre la capa de transporte de sockets (`socket`, `threading`, `queue`, `struct`).
+**SysNode** es un sistema de comunicación P2P y transferencia de archivos enfocado en redes locales (LAN/Wi-Fi). No requiere servidores centrales, funciona 100% offline, detecta dispositivos en tu red automáticamente y ofrece una interfaz moderna y fluida.
 
----
-
-## 📚 Estructura de la Documentación
-
-Toda la documentación operativa, arquitectónica y de defensa del examen está organizada en la carpeta [docs/](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs):
-
-1. **[00_REGLAS_Y_NORMAS.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/00_REGLAS_Y_NORMAS.md):** Reglas estrictas de código, prohibición de abstracciones de red, y explicación pedagógica de `threading` vs `asyncio`.
-2. **[01_ARQUITECTURA_Y_RED.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/01_ARQUITECTURA_Y_RED.md):** Modelo de hilos, topología P2P, protocolos UDP Broadcast y TCP Framing.
-3. **[02_DESARROLLO_Y_FASE_MVP.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/02_DESARROLLO_Y_FASE_MVP.md):** Estructura del proyecto y guía paso a paso de las 5 fases del MVP.
-4. **[03_INFRAESTRUCTURA_Y_SEGURIDAD.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/03_INFRAESTRUCTURA_Y_SEGURIDAD.md):** Medidas de ciberseguridad, prevención de Command Injection (Lista blanca) y Path Traversal.
-5. **[04_DEFENSA_EXAMEN_Y_REDES.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/04_DEFENSA_EXAMEN_Y_REDES.md):** Guía de estudio para el examen final con el profesor de redes (Kurose, framing, multiplexación, preguntas trampa).
-6. **[05_EXPLICACION_FASE_1.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/05_EXPLICACION_FASE_1.md):** Explicación didáctica y pedagógica paso a paso del código de la Fase 1 (UDP Discovery, hilos, llamadas al sistema).
-7. **[06_EXPLICACION_FASE_2.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/06_EXPLICACION_FASE_2.md):** Explicación didáctica y pedagógica del código de la Fase 2 (TCP Framing, `struct`, Shared Board y Lista Blanca).
-8. **[07_EXPLICACION_FASE_3.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/07_EXPLICACION_FASE_3.md):** Explicación didáctica y pedagógica del código de la Fase 3 (Transferencia binaria de archivos, streaming de 4KB, SHA-256 y Anti-Path Traversal).
-9. **[dudas_implementacion.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/dudas_implementacion.md):** Preguntas de diseño e inconsistencias técnicas a considerar durante el desarrollo.
+## 🚀 Características
+- **Descubrimiento Automático**: Encuentra a otros dispositivos ejecutando SysNode instantáneamente vía UDP.
+- **Chat P2P Cifrado**: Comunicación directa vía TCP sin intermediarios.
+- **Transferencia de Archivos Rápida**: Comparte archivos pesados a velocidad de LAN sin consumir datos de internet.
+- **Multiplataforma**: Funciona en Windows, Linux, macOS y Android.
+- **Servidor HTTP Integrado**: Puedes levantar un servidor web temporal desde el panel de configuración para que otros dispositivos de la red descarguen el cliente sin necesidad de usar USB o internet.
+- **Conexiones Manuales**: ¿Estás en subredes distintas o VPNs? Ingresa la IP de tu compañero manualmente.
 
 ---
 
-## 🚀 Guía Rápida de Uso
+## 🛠️ Cómo compilar y empaquetar
 
-1. **Instalar dependencias:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Ejecutar la Interfaz Gráfica (Desktop UI):**
-   ```bash
-   python3 main.py --name "MiPC"
-   ```
-3. **Ejecutar en modo Consola (CLI):**
-   ```bash
-   python3 main.py --cli --name "Consola" --tcp-port 50002
-   ```
-4. **Ejecutar la App Móvil (React Native):**
-   ```bash
-   cd mobile_app
-   npm install
-   npx expo start -c
-   ```
+SysNode está escrito en Python y utiliza **CustomTkinter** para la UI moderna de escritorio. Para distribuir la aplicación sin que los usuarios tengan que instalar Python, utilizamos **PyInstaller**.
 
-*(El proyecto fue defendido con éxito en la materia de Redes. Ahora es mantenido como herramienta funcional para uso diario).*
+### 1. Clonar el repositorio
+```bash
+git clone https://github.com/tu-usuario/SysNode.git
+cd SysNode
+```
+
+### 2. Ejecutar desde el código fuente
+Si solo deseas correr el programa usando tu propio entorno Python:
+```bash
+pip install -r requirements.txt
+python3 main.py
+```
+
+### 3. Crear el Ejecutable (Binario)
+El script de compilación `build.sh` automatiza todo el proceso, empaqueta los íconos, la carpeta web y compila un ejecutable de un solo archivo.
+
+```bash
+# Dar permisos de ejecución
+chmod +x build.sh
+
+# Ejecutar el empaquetado
+./build.sh
+```
+Al finalizar, encontrarás tu ejecutable en la carpeta `dist/`.
+
+> **Nota para Windows**: Puedes correr `pip install -r requirements.txt` y luego ejecutar el comando de PyInstaller manualmente en PowerShell:
+> `pyinstaller --onefile --noconsole --name sysnode --add-data "sysnode/ui/assets/icons;sysnode/ui/assets/icons" --add-data "sysnode/web;sysnode/web" main.py`
+
+---
+
+## 📱 Servidor de Descargas Integrado
+Si tienes amigos o compañeros en tu red que no tienen SysNode instalado:
+1. Abre SysNode.
+2. Ve a **Configuración** y activa el **Servidor HTTP**.
+3. Pídeles que ingresen a `http://[Tu-IP-Local]:8080` desde su navegador.
+4. Podrán descargar directamente la versión para Linux, Windows o Android.
+
+*Nota: Para que el botón de descarga del servidor integrado devuelva tu ejecutable empaquetado, simplemente cópialo a la carpeta `sysnode/web/` antes o después de generarlo, o el servidor interceptará la ruta `/sysnode` y servirá su propio binario en ejecución.*

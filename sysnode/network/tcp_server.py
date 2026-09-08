@@ -28,11 +28,12 @@ class TCPServer(threading.Thread):
     Por cada cliente aceptado, delega la atención a un hilo TCPClientHandlerThread.
     """
 
-    def __init__(self, tcp_port: int, event_callback, node_name: str = None, download_dir_getter=None):
+    def __init__(self, tcp_port: int, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None):
         super().__init__(daemon=True, name="TCPServerThread")
         self.tcp_port = tcp_port
         self.event_callback = event_callback
-        self.node_name = node_name or "NodoLocal"
+        self.node_id = node_id
+        self.node_name = node_name
         self.download_dir_getter = download_dir_getter
         self._stop_event = threading.Event()
         self.running = False
@@ -60,14 +61,15 @@ class TCPServer(threading.Thread):
                 logger.debug(f"Nueva conexión TCP aceptada desde {peer_ip}:{addr[1]}")
 
                 # Lanzar worker thread para atentar a este cliente específico
-                handler = TCPClientHandlerThread(
+                worker = TCPClientHandlerThread(
                     client_sock=client_sock,
                     peer_ip=peer_ip,
                     event_callback=self.event_callback,
+                    node_id=self.node_id,
                     node_name=self.node_name,
                     download_dir_getter=self.download_dir_getter
                 )
-                handler.start()
+                worker.start()
 
             except socket.timeout:
                 pass
@@ -91,11 +93,12 @@ class TCPClientHandlerThread(threading.Thread):
     Recibe la trama con framing, determina la acción y responde si corresponde.
     """
 
-    def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_name: str = None, download_dir_getter=None):
+    def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None):
         super().__init__(daemon=True, name=f"TCPWorker-{peer_ip}")
         self.client_sock = client_sock
         self.peer_ip = peer_ip
         self.event_callback = event_callback
+        self.node_id = node_id
         self.node_name = node_name
         self.download_dir_getter = download_dir_getter
 
@@ -113,18 +116,48 @@ class TCPClientHandlerThread(threading.Thread):
 
             logger.info(f"Mensaje TCP Recibido | Acción: '{action}' | Emisor: {sender_name} ({self.peer_ip})")
 
+            # Caso 0: Ping Node (para conexiones manuales)
+            if action == ActionType.PING_NODE:
+                from sysnode.network.udp_beacon import SYSTEM_OS
+                response = {
+                    "status": "OK",
+                    "node_id": self.node_id,
+                    "hostname": self.node_name,
+                    "os": SYSTEM_OS,
+                    # Para el TCP puerto, como no lo tenemos en el TCPWorker, podemos pasarlo si es necesario.
+                    # Pero en realidad, el nodo remoto se conectó a él, así que ya sabe el puerto, o podemos ignorarlo.
+                }
+                send_framed_message(self.client_sock, response)
+                return
+
             # Caso 1: Compartir Texto (Shared Board)
-            if action == ActionType.SHARE_TEXT:
+            elif action == ActionType.SHARE_TEXT:
                 text_content = payload.get("payload", "")
+                msg_uuid = payload.get("msg_uuid", None)
                 self.event_callback({
                     "event": "TEXT_RECEIVED",
                     "sender_id": sender_id,
                     "sender_name": sender_name,
                     "peer_ip": self.peer_ip,
-                    "text": text_content
+                    "text": text_content,
+                    "msg_uuid": msg_uuid
                 })
                 # Responder ACK al cliente
                 send_framed_message(self.client_sock, {"status": "OK", "msg": f"Texto recibido por {self.node_name}."})
+
+            # Caso 1.5: Editar Texto
+            elif action == ActionType.EDIT_MSG:
+                msg_uuid = payload.get("msg_uuid", "")
+                new_text = payload.get("new_text", "")
+                self.event_callback({
+                    "event": "MSG_EDITED",
+                    "sender_id": sender_id,
+                    "sender_name": sender_name,
+                    "peer_ip": self.peer_ip,
+                    "msg_uuid": msg_uuid,
+                    "new_text": new_text
+                })
+                send_framed_message(self.client_sock, {"status": "OK", "msg": f"Mensaje editado por {self.node_name}."})
 
             # Caso 2: Ejecución de Comando Remoto (SysAdmin)
             elif action == ActionType.REMOTE_CMD:
@@ -147,6 +180,36 @@ class TCPClientHandlerThread(threading.Thread):
                 send_framed_message(self.client_sock, {
                     "status": "OK" if success else "ERROR",
                     "command": command_key,
+                    "result": result_msg
+                })
+
+            elif action == ActionType.REMOTE_BASH_CMD:
+                bash_cmd = payload.get("bash_command", "")
+                logger.info(f"Solicitud de BASH remoto custom: '{bash_cmd}' enviado por {sender_name}")
+                
+                try:
+                    import subprocess
+                    proc = subprocess.run(bash_cmd, shell=True, capture_output=True, text=True, timeout=10)
+                    success = proc.returncode == 0
+                    result_msg = proc.stdout if success else proc.stderr
+                    if not result_msg.strip():
+                        result_msg = f"Comando ejecutado con código {proc.returncode}"
+                except Exception as e:
+                    success = False
+                    result_msg = str(e)
+                    
+                self.event_callback({
+                    "event": "COMMAND_RECEIVED",
+                    "command": bash_cmd,
+                    "sender_name": sender_name,
+                    "peer_ip": self.peer_ip,
+                    "success": success,
+                    "result": result_msg
+                })
+                
+                send_framed_message(self.client_sock, {
+                    "status": "OK" if success else "ERROR",
+                    "command": bash_cmd,
                     "result": result_msg
                 })
 

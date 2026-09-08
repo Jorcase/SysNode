@@ -25,9 +25,25 @@ AUTH_TIMEOUT_SEC = 5.0
 BUFFER_SIZE = 4096
 TCP_HEADER_SIZE = 4  # 4 bytes Big-Endian unsigned int (struct format '>I')
 
+def get_detailed_os():
+    base_os = platform.system().lower()
+    if base_os == "linux":
+        try:
+            if hasattr(platform, "freedesktop_os_release"):
+                info = platform.freedesktop_os_release()
+                return info.get("ID", "linux").lower()
+            elif os.path.exists("/etc/os-release"):
+                with open("/etc/os-release") as f:
+                    for line in f:
+                        if line.startswith("ID="):
+                            return line.split("=")[1].strip().strip('"').strip("'").lower()
+        except Exception:
+            pass
+    return base_os
+
 # Nombre y plataforma del sistema
 HOST_NAME = platform.node() or "sysnode-host"
-SYSTEM_OS = platform.system().lower()
+SYSTEM_OS = get_detailed_os()
 
 # Mensaje de identificación del protocolo
 PROTOCOL_TYPE_ANNOUNCE = "SYSNODE_ANNOUNCE"

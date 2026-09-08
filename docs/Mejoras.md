@@ -1,17 +1,45 @@
-General: Eliminar todo el uso de emojis en el codigo y en el front visual.
+# Documento de Mejoras y Requisitos - SysNode
 
-1.Ya que estamos usando una base de datos podriamos crear una tabla para usuarios, asi al iniciar la aplicacion se pueda ingresar el nombre con el que nos queremos presentar, y que queden asociados a ese usuario todas sus interacciones.CORRECCION deberia dejar cerrar sesion o ingresar desde otro usuario. o mostrar usuarios recientees en el dispotivio en su caso
-2.En la pantalla prinicipal, deberia decir SysNode solamente el p2p lo sacamos. La informacion es util pero deberiamos adaptarla con el punto 1. Los nodos deberia estar un poco mas arriba y decir Dispositivos: y luego el listado, este listado deberia mostrar informacion clara para reconocer los dispostivos y los que son agregados manualmente o por qr, deberian poder editarse o eliminarse. // CORRECCION DEL MODULO, aqui no se muestra la informacion muy clara ya que es mucho texto para poco espacio, deberia aparecer un icono con el tipo de dispositivo, quiero que utilicemos iconos modernos y minimalistas. sigue sin poder eliminarse o editar algo que se agrego manualmente o con qr,
-3.Las 3 funcionalidades que tenemos podriamos incluirlas en la misma pantalla pero de una manera mas ordenada, ya que indirectamente al interactuar con cualquier de las funcionalidades esta se ve reflejada en "Shared Board". //CORRECCION no esta mal pero los iconos que usan no me gustan, deberiamos como te dije mas arriba utilizar iconos modernos y minimalistas.
-Podria haber un boton para compartir archivos, ademas que deberiamos mejorar ese componente para compartir archivos porque usamos uno bastante viejo y tedioso en la navegacion. Luego un boton para enviar los comandos o incluso crear comandos en este caso deberiamos aprender y mostrar ejemplo de como crear uno (podria ser usando jsons) dependiendo el sistema operativo y como duda te pregunto(se pueden ejecutar comandos para mobiles?)CORRECCION esto todavia no se implemento al parecer, tenemos que hacerlo.
-Luego los archivos compartios deberia haber un boton que nos lleve a la carpeta donde se descargaron asi el usuario puede acceder con rapides o incluso elegir la carpeta donde se guardaran todos los archivos que se comparten. este boton si lo hiciste pero otra vez no se ve bien el icono, hay que corregir y ademas deja ver la carpeta donde se guardan las cosas pero no deja elegir en donde guardar, no deberiamos poder hacer esto? la carpeta por defecto donde se guardan las cosas es descargas pero deberiamos poder elegir otra.
-4.La shareboard esta deberia cambiar y mostrar diferentes cosas dependiendo al nodo que esta conectado. Ademas de tener la implementacion de un boton que permita copiar rapido cada mensaje enviado, porque esa era la funcionalidad principal del chat, poder pasar link o mensajes rapidos de un dispositivo a otro.CORRECCION esto tampoco lo hicimos, es la funcionalidad principal de poder enviar texto, la facilidad de poder copiar y pegar cosas de un dispositivo a otro.
-Deberiamos mejorar lo que se muestra al interactuar con las otras funcionalidades y los mensajes que muestran en el chat.
-5.Los nodos dependiendo si son pc o movil deberian tener un icon referenciando a que tipo son. CORRECCION tampoco esta implementado tema a ver.
+**Regla General:** Eliminar todo el uso de emojis en el código y en el front visual. Utilizar íconos modernos y minimalistas.
 
-#general algo no esta andando bien y no se cuando se enviaron documentos en mi maquina deberia mostrar un aviso o algo, o algun indicador sino no me entero de que esta pasando.
-si yo como pc no estoy conectado al nodo y este nodo me envio un mensaje no lo recivo nunca, no deberia pasar eso,yo como celular me conecto a la pc y le envio cosas y despues me fijo desde la pc si me llego algo, pero no deberia si o si estar elegido el nodo para recibir cosas, es como mensajeria digamos. ademas deberiamos poder saber si se detecto el nodo desde udp y queremos agregar el mismo nodo manual o por qr, deberia decir que ya existe y dirigirnos a el, no tiene sentido tener varias conexiones abiertas con el mismo dispostivo.
-si se comparte un archivo deberia mostrarse como en whatsapp para abrir la foto o video, si se comparte un archivo que es un pdf deberia mostrarse para abrir. como todo se descarga no es necesaria esa funcionalidad. pero los archivos deberian tener una previsualizacion sea cual sea la extension del archivo, averiguar librerias que ayuden con esto.
-preguntar o revisar: ya se hizo que el apartado de enviar mensajes funcione mas como un portapapeles donde uno pega cosas rapido y desde el otro dispositivo tiene un boton de copiar rapido? los mensajes se deberian poder editar, deberian tener un boton de editar para editarlo y que este se actualice en el otro dispositivo.
+## 1. Identidad y Usuarios (Repensado)
+- Cada dispositivo debe tener su propio "usuario" / identidad permanente para que la comunicación sea fluida.
+- Se debe resolver el problema de los nodos duplicados: un dispositivo físico debe mantener su identidad sin importar si cambia su IP local o su puerto.
+- A futuro en configuración: poder cambiar el nombre de usuario asociado a este dispositivo.
 
-este sistema funciona si o si si hay internet? la idea al ser lan es que no lo necersite exclusivamente, como se crea una red lan? 
+## 2. Pantalla de Inicio (Welcome Screen) y Configuraciones
+- **Menú de Inicio:** Al abrir la app de escritorio, no debe mostrarse directamente un chat vacío. Debe haber un menú de inicio visualmente cómodo que presente las funcionalidades principales hasta que se elija un nodo para interactuar.
+- **Apartado de Configuración (Settings):** Un menú dedicado donde se pueda:
+  - Cambiar el nombre del usuario.
+  - Administrar configuraciones por módulo (ej. elegir o abrir la carpeta de descargas).
+  - Administrar y crear nuevos comandos.
+- **Compartir App:** En el menú de inicio, agregar un botón para crear un servidor HTTP local que muestre una URL. Si otro dispositivo ingresa a la URL, se le debe ofrecer descargar el APK (Android) o el ejecutable (PC).
+
+## 3. Gestor de Comandos
+- **Comandos vía JSON:** Posibilidad de crear y administrar comandos mediante formato JSON.
+- **Ejemplos en la UI:** Mostrar de forma visual ejemplos de cómo se debe escribir el JSON para crear comandos.
+- **Limitación de Móviles:** Se reafirma que los comandos no se enviarán hacia celulares. El sistema inteligente ya detecta cuando se habla con un móvil. Los celulares sí podrán mandar comandos a la PC.
+
+## 4. Edición de Mensajes y Portapapeles (Core de chat)
+- **Copiado rápido:** Los mensajes deben tener un botón para ser copiados de un dispositivo a otro rápidamente (Funcionalidad base del portapapeles). *(Implementado parcialmente)*
+- **Edición de mensajes:** Los mensajes enviados deben poder editarse con un botón. Al editar, el cambio debe viajar por la red y actualizarse en el otro dispositivo.
+
+## 5. Diseño y Visualización
+- **Archivos:** Mostrar diseño y previsualización de archivos para cualquier extensión (no solo imágenes), estilo tarjetas modernas. *(Implementado)*
+- **Notificaciones / Offline:** Si se envían archivos o textos y no estoy mirando el nodo, debe haber un aviso o indicador claro. El esquema debe ser de mensajería asíncrona ("Store & Forward"). *(Implementado)*
+- **Íconos de OS:** Los nodos deben mostrar con un ícono claro y minimalista si son PC o Móvil. *(Implementado)*
+
+*Nota técnica:* El sistema fue diseñado para funcionar en una red LAN y **no necesita internet**. Se autodescubre al estar conectado al mismo router o switch. 
+
+## 6. Rediseño Estructural de Interfaz (V2) - Correcciones
+- **Íconos Modernos:** Se implementó una librería de íconos en `assets/icons/`. Continuar utilizándolos para organizar la información (ej. en el Perfil).
+- **Navegación / Sidebar (Estilo WhatsApp):** Correctamente implementado.
+- **Pantalla de Inicio y Perfil (Refinamiento):** 
+  - Limpiar la Pantalla de Inicio: Reevaluar si "Añadir IP manual" y "Compartir App" deben ser los protagonistas si el UDP funciona bien. (A discutir si se mueven o se ocultan).
+  - El botón "Compartir App (HTTP)" no debe usar un ícono de QR, ya que es para compartir el instalador de PC también.
+  - **Nueva Vista de Perfil:** Crear una sección separada (accesible desde el menú) donde se muestre la información del dispositivo de forma ordenada usando íconos, se permita **editar el nombre de usuario**, y se muestre el **Código QR** directamente para que otros lo escaneen.
+- **Configuración Modular:**
+  - Remover la edición de nombre de usuario de aquí (movida a Perfil).
+  - Corregir el layout responsivo en "Archivos y Descargas" para que las rutas largas no empujen los botones fuera de la pantalla.
+  - **Comandos:** Permitir **editar** (no solo borrar) los comandos existentes.
+  - **Creación de Comando:** El cuadro de texto izquierdo debe estar vacío con un texto de ayuda (placeholder "Escribe aquí..."). La plantilla derecha debe mostrarse sin la aclaración explícita "(No Editable)".
