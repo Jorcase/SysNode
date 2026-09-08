@@ -33,28 +33,34 @@ class SharingHTTPServer:
                 logger.info(f"[HTTP Server] {self.client_address[0]} - - {format%args}")
 
             def do_GET(self):
-                if self.path == '/sysnode' and getattr(sys, 'frozen', False):
-                    try:
-                        with open(sys.executable, 'rb') as f:
-                            fs = os.fstat(f.fileno())
-                            self.send_response(200)
-                            self.send_header("Content-Type", "application/octet-stream")
-                            self.send_header("Content-Disposition", 'attachment; filename="sysnode"')
-                            self.send_header("Content-Length", str(fs.st_size))
-                            self.end_headers()
-                            self.copyfile(f, self.wfile)
-                        return
-                    except IOError:
-                        self.send_error(404, "File not found")
-                        return
+                if getattr(sys, 'frozen', False):
+                    # Only serve the host's executable if the correct OS button is clicked
+                    target_path = '/sysnode-installer.exe' if os.name == 'nt' else '/sysnode'
+                    
+                    if self.path == target_path:
+                        try:
+                            with open(sys.executable, 'rb') as f:
+                                fs = os.fstat(f.fileno())
+                                self.send_response(200)
+                                self.send_header("Content-Type", "application/octet-stream")
+                                filename = os.path.basename(sys.executable)
+                                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                                self.send_header("Content-Length", str(fs.st_size))
+                                self.end_headers()
+                                self.copyfile(f, self.wfile)
+                            return
+                        except IOError:
+                            self.send_error(404, "File not found")
+                            return
                 super().do_GET()
 
+        import functools
         try:
-            # Change to the web directory so we serve its contents directly
-            os.chdir(self.web_dir)
+            # Use functools.partial to pass the directory to the handler without changing CWD
+            Handler = functools.partial(CustomHandler, directory=self.web_dir)
             
             # Setup server
-            self.server = socketserver.TCPServer(("", self.port), CustomHandler)
+            self.server = socketserver.TCPServer(("", self.port), Handler)
             
             # Start in a daemon thread
             self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

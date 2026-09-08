@@ -972,7 +972,7 @@ class SysNodeDesktopApp(ctk.CTk):
             os.chdir(old_cwd)
 
     def change_downloads_folder(self):
-        new_dir = self.get_modern_file_dialog("folder", title="Seleccionar Carpeta de Descargas")
+        new_dir = self.get_modern_file_dialog("directory", title="Seleccionar Carpeta de Descargas")
         if new_dir:
             self.core.db.set_downloads_path(new_dir)
             if hasattr(self, 'lbl_dl_path'):

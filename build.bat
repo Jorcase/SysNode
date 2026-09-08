@@ -11,7 +11,7 @@ echo Compilando SysNode Desktop con PyInstaller para Windows...
 :: --onefile: Crear un solo ejecutable (.exe)
 :: --noconsole: No mostrar terminal negra de fondo
 :: --add-data: Usamos punto y coma (;) en Windows en lugar de (:)
-pyinstaller --onefile --noconsole ^
+python -m PyInstaller --onefile --noconsole ^
     --name sysnode ^
     --hidden-import PIL._tkinter_finder ^
     --icon "sysnode\ui\assets\icons\home.png" ^
