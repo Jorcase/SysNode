@@ -64,3 +64,9 @@ mobile_app/.expo/
 mobile_app/**/*.apk
 
 descargas/
+
+# Ignorar binarios en la web local (Evitar efecto Matrioska)
+sysnode/web/*.exe
+sysnode/web/*.apk
+sysnode/web/*.deb
+sysnode/web/sysnode

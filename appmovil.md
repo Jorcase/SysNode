@@ -1,0 +1,16 @@
+bien ahora quiero que rediseñemos toda la aplicacion movil[Screenshot_2026-09-08-11-06-31-810_com.whatsapp.jpg](file;file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/descargas/Screenshot_2026-09-08-11-06-31-810_com.whatsapp.jpg) [Screenshot_2026-09-08-11-06-36-283_com.whatsapp.jpg](file;file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/descargas/Screenshot_2026-09-08-11-06-36-283_com.whatsapp.jpg) 
+actualmente esta la primera version que hicimos que era una copia identica de la app de escritorio primer que hicimos la cual no se veia demasiado bien.
+te adjunto capturas de como se ve whatsapp en el movil.
+quiero que la aplicacion se vea moderna y agradable a la vista. no quiero que se vea como una copia identica de whatsapp, sino que tenga su propio estilo. pero me gusta mucho la manera en la que se ven los elementos en las capturas de ejemplo, quiero que tenga algo de ese estilo, no que sea una copia.
+lo que yo quiero para la app movil es que al iniciar la app se vea como el estilo de wpp en las capturas donde los nodos/dispositivos se vean en forma lista como chats y cuando uno presiona en un dispotivo se abra como el chat con el dispositivo.
+estos deben estar ordenados en orden de mas recientes pero tambien priorizando arriba los que estan activos por sobre los que estan apagados.
+luego debajo deberia haber un boton con un icono de + para poder elegir agregar un nodo manual o mediante escaneo qr. si se agrega un nodo manual se debe pedir la ip y el puerto del nodo.
+deberia haber una forma de ir a nuestro propio perfil donde decidimos nuestro nombre con el cual nos presentamos a los usuarios asi como hacemos en la app de escritorio y ademas podemos ver nuestra informacion
+luego un apartado para ir a configuracion donde podemos tenemos los botones para ver la carpeta donde se guardan los archivos y el boton para elegir la ruta de donde queremos guardar los archivos
+la funcion para los comandos para poder crearlos, editar o borrar los existentes
+luego al entrar a un chat deberia verse de una forma agradable a la vista, recorda que cada mensaje deberia tener un boton rapido para copiar. la opcion para escribir y ver el texto mientras se va escribiendo debe ser comoda, luego debemos tener la opcion de utilizar las funciones como enviar archivo o ejecutar comandos y pense como un agregado poder sacar foto al instante y enviarla.
+cada mensaje deberia al ser seleccionado mostrar un par de opciones como reenviar, eliminar y ver detalles.
+luego en el chat deberia ser como en las capturas que arriba aparece el nombre con quien interactuamos y la opcion de volver atras con un boton <- y si apretamos en el nombre que nos lleve a la informacion de ese dispostivio y la opcion de ver la carpeta de archivos compartidos, y la opcion de vaciar el chat. 
+cada chat deberia poder elegido ser borrado o vaciado al ser seleccionado siempre y cuando no se encuentre activo, si se encuentra activo deberia poder ser vaciado el chat solametente no borrado.
+como dije para la app de escritorio nada de emojis ni cosas hechas con texto como [+], utilizaremos iconos modernos acordes a la app.
+Quiero una navegacion fluida para la app y tener una buena experiencia de usuario.
