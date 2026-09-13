@@ -101,6 +101,9 @@ def receive_framed_message(sock: socket.socket) -> Optional[Dict[str, Any]]:
         logger.error(f"Error decodificando payload JSON recibido: {e}")
         return None
 
+# Alias para compatibilidad de invocación
+recv_framed_message = receive_framed_message
+
 
 def _read_exact_bytes(sock: socket.socket, num_bytes: int) -> Optional[bytes]:
     """

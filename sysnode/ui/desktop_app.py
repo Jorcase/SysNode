@@ -1596,7 +1596,7 @@ class SysNodeDesktopApp(ctk.CTk):
 
         def start_terminal_thread():
             import socket
-            from sysnode.network.framing import send_framed_message, recv_framed_message
+            from sysnode.network.framing import send_framed_message, receive_framed_message
 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1612,7 +1612,7 @@ class SysNodeDesktopApp(ctk.CTk):
                     "rows": 24
                 })
 
-                resp = recv_framed_message(s)
+                resp = receive_framed_message(s)
                 if not resp or resp.get("status") != "PIN_REQUIRED":
                     print_term("[ERROR] El nodo remoto no aceptó la solicitud de terminal.\n")
                     return
@@ -1620,12 +1620,23 @@ class SysNodeDesktopApp(ctk.CTk):
                 session_id = resp.get("session_id")
                 term_state["session_id"] = session_id
 
-                # Solicitar PIN al usuario mediante diálogo
-                dialog = ctk.CTkInputDialog(
-                    text=f"Ingresá el PIN de 6 dígitos generado en la pantalla de {hostname}:",
-                    title="Autorización de Terminal"
-                )
-                pin_code = dialog.get_input()
+                # Solicitar PIN al usuario mediante diálogo en el hilo principal
+                pin_container = {"pin": None, "done": threading.Event()}
+                def ask_pin_on_main_thread():
+                    try:
+                        dialog = ctk.CTkInputDialog(
+                            text=f"Ingresá el PIN de 6 dígitos generado en la pantalla de {hostname}:",
+                            title="Autorización de Terminal"
+                        )
+                        pin_container["pin"] = dialog.get_input()
+                    except Exception as e:
+                        logger.error(f"Error dialog PIN: {e}")
+                    finally:
+                        pin_container["done"].set()
+
+                self.after(0, ask_pin_on_main_thread)
+                pin_container["done"].wait(timeout=60.0)
+                pin_code = pin_container["pin"]
 
                 if not pin_code:
                     print_term("[SYSNODE] Solicitud de PIN cancelada por el usuario.\n")
@@ -1637,7 +1648,7 @@ class SysNodeDesktopApp(ctk.CTk):
                     "pin": pin_code.strip()
                 })
 
-                auth_resp = recv_framed_message(s)
+                auth_resp = receive_framed_message(s)
                 if not auth_resp or auth_resp.get("status") != "OK":
                     print_term(f"[ERROR] Acceso Denegado: {auth_resp.get('msg', 'PIN inválido')}\n")
                     return
@@ -1648,13 +1659,13 @@ class SysNodeDesktopApp(ctk.CTk):
 
                 while term_state["active"]:
                     try:
-                        msg = recv_framed_message(s)
+                        msg = receive_framed_message(s)
                         if not msg:
                             break
-                        if msg.get("type") == "TERM_STDOUT":
+                        if msg.get("action") == "TERM_STDOUT" or msg.get("type") == "TERM_STDOUT":
                             data = msg.get("data", "")
                             print_term(data)
-                        elif msg.get("status") == "CLOSED":
+                        elif msg.get("action") == "TERM_CLOSE" or msg.get("status") == "CLOSED":
                             print_term("\n[SYSNODE] La sesión de terminal fue cerrada por el host remoto.\n")
                             break
                     except socket.timeout:
