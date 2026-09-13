@@ -1619,12 +1619,14 @@ class SysNodeDesktopApp(ctk.CTk):
         def clean_ansi(text: str) -> str:
             if not text:
                 return ""
-            # Strip OSC title sequences
-            text = re.sub(r'\x1b\][0-9];.*?(?:\x07|\x1b\\)', '', text)
+            # Strip OSC / systemd VTE tracking sequences (e.g. \x1b]3008;start=... or ]3008;start=...)
+            text = re.sub(r'(\x1b\]|\])[0-9]+;.*?(?:\x07|\x1b\\|\n|$)', '', text)
             # Strip CSI control escape sequences (\x1b[...m, \x1b[?2004h, \x1b[K, etc.)
             text = re.sub(r'\x1b\[[0-9;?]*[a-zA-Z]', '', text)
-            # Strip character mode escapes
+            # Strip character mode escapes (\x1b(B, \x1b=, etc.)
             text = re.sub(r'\x1b[\(\)\=\>][A-Za-z0-9]?', '', text)
+            # Remove lone ESC bytes
+            text = text.replace('\x1b', '')
             # Remove bell / nulls
             text = text.replace('\x00', '').replace('\x07', '')
             # Normalize CRLF
@@ -1662,8 +1664,6 @@ class SysNodeDesktopApp(ctk.CTk):
         def send_term_stdin():
             cmd = cmd_entry.get()
             cmd_entry.delete(0, "end")
-            if cmd.strip():
-                print_term(f"\n> {cmd}\n")
             if term_state["sock"] and term_state["active"] and term_state["session_id"]:
                 try:
                     from sysnode.network.framing import send_framed_message
@@ -2029,45 +2029,50 @@ class SysNodeDesktopApp(ctk.CTk):
                 font=ctk.CTkFont(size=10, weight="bold"),
                 text_color="#94A3B8"
             )
-            lbl_pin_tag.pack(pady=(10, 2))
+            lbl_pin_tag.pack(pady=(10, 4))
+
+            # Fila horizontal: Números al costado del botón de copiar (misma altura 34)
+            pin_row = ctk.CTkFrame(pin_card, fg_color="transparent")
+            pin_row.pack(pady=(0, 10))
 
             spaced_pin = "  ".join(list(str(pin)))
             lbl_pin_val = ctk.CTkLabel(
-                pin_card,
+                pin_row,
                 text=spaced_pin,
-                font=ctk.CTkFont(family="monospace", size=28, weight="bold"),
-                text_color="#2ECC71"
+                font=ctk.CTkFont(family="monospace", size=20, weight="bold"),
+                text_color="#2ECC71",
+                height=34
             )
-            lbl_pin_val.pack(pady=(0, 4))
+            lbl_pin_val.pack(side="left", padx=(0, 12))
 
+            # Botón de copiar SOLO ICONO (mismo alto 34)
             copy_icon = self.icons.get('copy')
             btn_copy = ctk.CTkButton(
-                pin_card,
+                pin_row,
                 image=copy_icon,
-                text=" Copiar PIN",
-                font=ctk.CTkFont(size=11),
-                fg_color="transparent",
-                hover_color="#2C2C2C",
-                text_color="#3498DB",
-                height=26,
-                width=100
+                text="",
+                width=34,
+                height=34,
+                fg_color="#2A2A2A",
+                hover_color="#383838",
+                corner_radius=6
             )
             
             def copy_pin():
                 try:
                     self.clipboard_clear()
                     self.clipboard_append(str(pin).strip())
-                    btn_copy.configure(text=" ¡Copiado!")
-                    self.after(2000, lambda: btn_copy.configure(text=" Copiar PIN") if (hasattr(btn_copy, 'winfo_exists') and btn_copy.winfo_exists()) else None)
+                    btn_copy.configure(fg_color="#27AE60")
+                    self.after(1500, lambda: btn_copy.configure(fg_color="#2A2A2A") if (hasattr(btn_copy, 'winfo_exists') and btn_copy.winfo_exists()) else None)
                 except Exception as ex:
                     logger.error(f"Error copiando PIN: {ex}")
 
             btn_copy.configure(command=copy_pin)
-            btn_copy.pack(pady=(0, 8))
+            btn_copy.pack(side="left")
 
             lbl_note = ctk.CTkLabel(
                 content,
-                text="Proporcioná este código únicamente si autorizás el acceso remoto.",
+                text="Código de autorización",
                 font=ctk.CTkFont(size=11),
                 text_color="#888888",
                 justify="center"
