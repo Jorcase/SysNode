@@ -1614,22 +1614,37 @@ class SysNodeDesktopApp(ctk.CTk):
         threading.Thread(target=pre_auth_and_connect, daemon=True).start()
 
     def launch_active_terminal_ui(self, s, session_id, ip, port, hostname):
+        import re
+
+        def clean_ansi(text: str) -> str:
+            if not text:
+                return ""
+            # Strip OSC title sequences
+            text = re.sub(r'\x1b\][0-9];.*?(?:\x07|\x1b\\)', '', text)
+            # Strip CSI control escape sequences (\x1b[...m, \x1b[?2004h, \x1b[K, etc.)
+            text = re.sub(r'\x1b\[[0-9;?]*[a-zA-Z]', '', text)
+            # Strip character mode escapes
+            text = re.sub(r'\x1b[\(\)\=\>][A-Za-z0-9]?', '', text)
+            # Remove bell / nulls
+            text = text.replace('\x00', '').replace('\x07', '')
+            # Normalize CRLF
+            text = text.replace('\r\n', '\n').replace('\r', '')
+            return text
+
         term_win = ctk.CTkToplevel(self)
         term_win.title(f"Terminal Remota - {hostname} ({ip}:{port})")
         term_win.geometry("850x520")
         term_win.minsize(600, 350)
         term_win.configure(fg_color="#121212")
 
-        hdr = ctk.CTkFrame(term_win, fg_color="#1E1E1E", height=40)
-        hdr.pack(fill="x", side="top")
-        ctk.CTkLabel(hdr, text=f"Terminal Remota PTY | Conectado a {hostname}", font=ctk.CTkFont(size=14, weight="bold"), text_color="#2ECC71").pack(side="left", padx=15, pady=8)
-
         term_text = ctk.CTkTextbox(term_win, font=ctk.CTkFont(family="monospace", size=13), fg_color="#0A0A0A", text_color="#00FF66")
         term_text.pack(fill="both", expand=True, padx=10, pady=10)
 
         def print_term(msg):
-            term_text.insert("end", msg)
-            term_text.see("end")
+            cleaned = clean_ansi(msg)
+            if cleaned:
+                term_text.insert("end", cleaned)
+                term_text.see("end")
 
         print_term(f"[SYSNODE] Conexión PTY autenticada con éxito en {hostname} ({ip}:{port})...\n\n")
 
@@ -1647,6 +1662,8 @@ class SysNodeDesktopApp(ctk.CTk):
         def send_term_stdin():
             cmd = cmd_entry.get()
             cmd_entry.delete(0, "end")
+            if cmd.strip():
+                print_term(f"\n> {cmd}\n")
             if term_state["sock"] and term_state["active"] and term_state["session_id"]:
                 try:
                     from sysnode.network.framing import send_framed_message
@@ -1917,86 +1934,6 @@ class SysNodeDesktopApp(ctk.CTk):
             self.show_terminal_pin_modal(sender_name, peer_ip, pin)
             return
 
-    def show_terminal_pin_modal(self, sender_name, peer_ip, pin):
-        try:
-            modal = ctk.CTkToplevel(self)
-            modal.title("SysNode - Autorización de Terminal Remota")
-            modal.geometry("500x350")
-            modal.resizable(False, False)
-            modal.configure(fg_color="#181818")
-            modal.transient(self)
-            modal.lift()
-            modal.attributes("-topmost", True)
-
-            # Header Frame
-            hdr = ctk.CTkFrame(modal, fg_color="#222222", corner_radius=0, height=50)
-            hdr.pack(fill="x", side="top")
-            
-            lbl_title = ctk.CTkLabel(
-                hdr, 
-                text="Solicitud de Terminal Remota", 
-                font=ctk.CTkFont(size=16, weight="bold"), 
-                text_color="#FFFFFF"
-            )
-            lbl_title.pack(side="left", padx=20, pady=12)
-
-            # Content Container
-            content = ctk.CTkFrame(modal, fg_color="transparent")
-            content.pack(fill="both", expand=True, padx=25, pady=15)
-
-            lbl_info = ctk.CTkLabel(
-                content,
-                text=f"El equipo '{sender_name}' ({peer_ip}) solicita acceso a la terminal remota de tu PC.",
-                font=ctk.CTkFont(size=13),
-                text_color="#D1D5DB",
-                wraplength=440,
-                justify="center"
-            )
-            lbl_info.pack(pady=(5, 12))
-
-            # PIN Card Box
-            pin_card = ctk.CTkFrame(content, fg_color="#0F172A", border_color="#1E293B", border_width=1, corner_radius=8)
-            pin_card.pack(fill="x", padx=10, pady=5)
-
-            lbl_pin_tag = ctk.CTkLabel(
-                pin_card,
-                text="CÓDIGO PIN DE AUTORIZACIÓN",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color="#94A3B8"
-            )
-            lbl_pin_tag.pack(pady=(12, 4))
-
-            spaced_pin = "  ".join(list(str(pin)))
-            lbl_pin_val = ctk.CTkLabel(
-                pin_card,
-                text=spaced_pin,
-                font=ctk.CTkFont(family="monospace", size=30, weight="bold"),
-                text_color="#2ECC71"
-            )
-            lbl_pin_val.pack(pady=(0, 12))
-
-            lbl_note = ctk.CTkLabel(
-                content,
-                text="Proporcioná este código únicamente si autorizás el acceso remoto.",
-                font=ctk.CTkFont(size=11),
-                text_color="#9CA3AF",
-                justify="center"
-            )
-            lbl_note.pack(pady=(10, 5))
-
-            btn_ok = ctk.CTkButton(
-                modal,
-                text="Entendido",
-                font=ctk.CTkFont(size=13, weight="bold"),
-                fg_color="#27AE60",
-                hover_color="#1E8449",
-                height=38,
-                command=modal.destroy
-            )
-            btn_ok.pack(pady=(0, 20), padx=40, fill="x")
-        except Exception as e:
-            logger.error(f"Error mostrando modal PIN: {e}")
-        
         if etype == "TEXT_RECEIVED":
             msg = event.get('text', '')
             if sender_id == self.selected_node_id:
@@ -2043,6 +1980,112 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.progress_bar.set(current / total)
                 if current >= total:
                     self.after(2000, lambda: self.progress_bar.grid_forget())
+
+    def show_terminal_pin_modal(self, sender_name, peer_ip, pin):
+        try:
+            if hasattr(self, '_active_pin_modal') and self._active_pin_modal is not None:
+                try:
+                    if self._active_pin_modal.winfo_exists():
+                        self._active_pin_modal.destroy()
+                except Exception:
+                    pass
+
+            modal = ctk.CTkToplevel(self)
+            self._active_pin_modal = modal
+            modal.title("SysNode - Autorización de Terminal Remota")
+            modal.geometry("480x300")
+            modal.resizable(False, False)
+            modal.configure(fg_color="#141414")
+            modal.transient(self)
+            modal.lift()
+            modal.focus_force()
+            modal.attributes("-topmost", True)
+
+            def close_modal():
+                self._active_pin_modal = None
+                modal.destroy()
+
+            modal.protocol("WM_DELETE_WINDOW", close_modal)
+
+            content = ctk.CTkFrame(modal, fg_color="transparent")
+            content.pack(fill="both", expand=True, padx=25, pady=20)
+
+            lbl_info = ctk.CTkLabel(
+                content,
+                text=f"El equipo '{sender_name}' ({peer_ip}) solicita acceso a la terminal remota de tu PC.",
+                font=ctk.CTkFont(size=13),
+                text_color="#D1D5DB",
+                wraplength=430,
+                justify="center"
+            )
+            lbl_info.pack(pady=(0, 12))
+
+            pin_card = ctk.CTkFrame(content, fg_color="#222222", border_color="#333333", border_width=1, corner_radius=8)
+            pin_card.pack(fill="x", padx=10, pady=5)
+
+            lbl_pin_tag = ctk.CTkLabel(
+                pin_card,
+                text="CÓDIGO PIN DE AUTORIZACIÓN",
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color="#94A3B8"
+            )
+            lbl_pin_tag.pack(pady=(10, 2))
+
+            spaced_pin = "  ".join(list(str(pin)))
+            lbl_pin_val = ctk.CTkLabel(
+                pin_card,
+                text=spaced_pin,
+                font=ctk.CTkFont(family="monospace", size=28, weight="bold"),
+                text_color="#2ECC71"
+            )
+            lbl_pin_val.pack(pady=(0, 4))
+
+            copy_icon = self.icons.get('copy')
+            btn_copy = ctk.CTkButton(
+                pin_card,
+                image=copy_icon,
+                text=" Copiar PIN",
+                font=ctk.CTkFont(size=11),
+                fg_color="transparent",
+                hover_color="#2C2C2C",
+                text_color="#3498DB",
+                height=26,
+                width=100
+            )
+            
+            def copy_pin():
+                try:
+                    self.clipboard_clear()
+                    self.clipboard_append(str(pin).strip())
+                    btn_copy.configure(text=" ¡Copiado!")
+                    self.after(2000, lambda: btn_copy.configure(text=" Copiar PIN") if (hasattr(btn_copy, 'winfo_exists') and btn_copy.winfo_exists()) else None)
+                except Exception as ex:
+                    logger.error(f"Error copiando PIN: {ex}")
+
+            btn_copy.configure(command=copy_pin)
+            btn_copy.pack(pady=(0, 8))
+
+            lbl_note = ctk.CTkLabel(
+                content,
+                text="Proporcioná este código únicamente si autorizás el acceso remoto.",
+                font=ctk.CTkFont(size=11),
+                text_color="#888888",
+                justify="center"
+            )
+            lbl_note.pack(pady=(8, 12))
+
+            btn_ok = ctk.CTkButton(
+                content,
+                text="Entendido",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color="#27AE60",
+                hover_color="#1E8449",
+                height=36,
+                command=close_modal
+            )
+            btn_ok.pack(padx=30, fill="x")
+        except Exception as e:
+            logger.error(f"Error mostrando modal PIN: {e}")
 
     def hide_window(self):
         if self.tray_icon:
