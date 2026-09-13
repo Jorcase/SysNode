@@ -3,108 +3,193 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SysNode - Instalar</title>
+    <title>SysNode - Compartir App</title>
     <style>
         :root {
             --bg: #0f1115;
             --surface: #1e2128;
-            --text: #e2e8f0;
+            --surface-hover: #262a34;
+            --text: #f8fafc;
             --text-muted: #94a3b8;
             --primary: #3b82f6;
-            --primary-hover: #2563eb;
-            --border: #334155;
+            --border: #2e3440;
         }
         
+        * { box-sizing: border-box; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg);
             color: var(--text);
             margin: 0;
+            padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
         }
 
-        .container {
+        .split-container {
+            display: flex;
+            flex-direction: row;
             background-color: var(--surface);
-            padding: 40px;
-            border-radius: 12px;
+            border-radius: 6px;
             border: 1px solid var(--border);
             width: 100%;
-            max-width: 400px;
-            text-align: center;
+            max-width: 760px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
 
-        h1 {
-            margin: 0 0 5px 0;
-            font-size: 24px;
-            font-weight: 600;
+        @media (max-width: 640px) {
+            .split-container {
+                flex-direction: column;
+                margin: 20px;
+            }
         }
 
-        p {
+        /* Left Info Panel */
+        .info-panel {
+            flex: 1;
+            padding: 35px;
+            background: linear-gradient(135deg, #181b22 0%, #111319 100%);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .info-panel h1 {
+            font-size: 26px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            color: var(--text);
+        }
+
+        .info-panel p {
             color: var(--text-muted);
-            font-size: 14px;
-            margin-bottom: 30px;
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 0 0 20px 0;
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .feature-list li {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .feature-list li::before {
+            content: "✓";
+            color: var(--primary);
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        /* Right Downloads Panel */
+        .downloads-panel {
+            flex: 1;
+            padding: 35px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .downloads-panel h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 0 18px 0;
+            color: var(--text);
         }
 
         .btn-group {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
 
         .btn {
-            display: block;
-            padding: 14px 20px;
-            background-color: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background-color: var(--surface-hover);
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 4px;
             color: var(--text);
             text-decoration: none;
-            font-size: 15px;
-            font-weight: 500;
-            transition: all 0.2s ease;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.15s ease, border 0.15s ease;
         }
 
         .btn:hover {
-            transform: translateY(-2px);
-            opacity: 0.9;
+            background-color: #2e3442;
+            border-color: var(--primary);
         }
 
-        /* Colores sutiles para los botones */
-        .btn-android { background-color: rgba(61, 220, 132, 0.15); border-color: rgba(61, 220, 132, 0.3); color: #81f4a9; }
-        .btn-android:hover { background-color: rgba(61, 220, 132, 0.25); border-color: rgba(61, 220, 132, 0.5); color: #a3f7c1; }
-
-        .btn-windows { background-color: rgba(0, 120, 215, 0.15); border-color: rgba(0, 120, 215, 0.3); color: #7cbcf2; }
-        .btn-windows:hover { background-color: rgba(0, 120, 215, 0.25); border-color: rgba(0, 120, 215, 0.5); color: #a4cff5; }
-
-        .btn-linux { background-color: rgba(245, 169, 0, 0.15); border-color: rgba(245, 169, 0, 0.3); color: #fad170; }
-        .btn-linux:hover { background-color: rgba(245, 169, 0, 0.25); border-color: rgba(245, 169, 0, 0.5); color: #fce2a1; }
-        
-        .footer {
-            margin-top: 30px;
-            font-size: 12px;
+        .btn-tag {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.08);
             color: var(--text-muted);
+        }
+
+        .btn-android:hover { border-color: #22c55e; }
+        .btn-windows:hover { border-color: #3b82f6; }
+        .btn-linux:hover { border-color: #eab308; }
+
+        .footer {
+            margin-top: 20px;
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>SysNode</h1>
-        <p style="margin-bottom: 20px;">Comunicación P2P local, rápida y segura.</p>
+    <div class="split-container">
+        <!-- Panel Izquierdo: Información SysNode -->
+        <div class="info-panel">
+            <h1>SysNode</h1>
+            <p>Red P2P encapsulada en LAN local. Comunicación directa entre PC y dispositivos móviles sin servidores centralizados.</p>
 
-        <div class="btn-group">
-            <a href="https://github.com/Jorcase/SysNode/releases/latest/download/sysnode.apk" class="btn btn-android" target="_blank" rel="noopener noreferrer">Android (.apk)</a>
-            <a href="https://github.com/Jorcase/SysNode/releases/latest/download/sysnode-installer.exe" class="btn btn-windows" target="_blank" rel="noopener noreferrer">Windows (.exe)</a>
-            <a href="https://github.com/Jorcase/SysNode/releases/latest/download/sysnode" class="btn btn-linux" target="_blank" rel="noopener noreferrer">Linux (Ejecutable)</a>
-        </div>
-        
-        <div class="info-box" style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-top: 25px; text-align: left; font-size: 13px; color: var(--text-muted);">
-            Descargá el instalador para tu plataforma y conectate automáticamente con los dispositivos de esta red. No requiere internet.
+            <ul class="feature-list">
+                <li>Descubrimiento automático UDP/TCP</li>
+                <li>Transferencia de archivos SHA-256</li>
+                <li>Terminal remota SSH / PTY interactiva</li>
+                <li>Funciona 100% offline sin internet</li>
+            </ul>
         </div>
 
-        <div class="footer">SysNode P2P LAN</div>
+        <!-- Panel Derecho: Descargas -->
+        <div class="downloads-panel">
+            <h2>Descargar Cliente</h2>
+            <div class="btn-group">
+                <a href="https://github.com/Jorcase/SysNode/releases/latest/download/sysnode.apk" class="btn btn-android" target="_blank" rel="noopener noreferrer">
+                    <span>Android</span>
+                    <span class="btn-tag">.apk</span>
+                </a>
+                <a href="https://github.com/Jorcase/SysNode/releases/latest/download/sysnode-installer.exe" class="btn btn-windows" target="_blank" rel="noopener noreferrer">
+                    <span>Windows</span>
+                    <span class="btn-tag">.exe</span>
+                </a>
+                <a href="https://github.com/Jorcase/SysNode/releases/latest/download/sysnode" class="btn btn-linux" target="_blank" rel="noopener noreferrer">
+                    <span>Linux</span>
+                    <span class="btn-tag">Binario</span>
+                </a>
+            </div>
+            <div class="footer">SysNode Local LAN Server</div>
+        </div>
     </div>
 </body>
 </html>

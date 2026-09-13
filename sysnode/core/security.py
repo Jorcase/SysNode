@@ -121,9 +121,9 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
                 test_sock.connect(("1.1.1.1", 53))
                 latency_ms = int((time.time() - start) * 1000)
                 test_sock.close()
-                return True, f"[{node_label}] 🌐 Conectado a Internet (Latencia: {latency_ms}ms)"
+                return True, f"[{node_label}] Conectado a Internet (Latencia: {latency_ms}ms)"
             except Exception:
-                return True, f"[{node_label}] ⚠️ Sin salida a Internet (Únicamente conectado a la LAN)"
+                return True, f"[{node_label}] Sin salida a Internet (Únicamente conectado a la LAN)"
 
         # Ejecución genérica basada en argumentos sin shell=True
         cmd_args = cmd_info.get(current_os)

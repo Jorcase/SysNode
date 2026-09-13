@@ -1,6 +1,7 @@
-import { ActionType } from "./Protocol";
 import TcpSocket from 'react-native-tcp-socket';
+import { createFramedMessage } from './Protocol';
 import { Buffer } from 'buffer';
+import { parseFramedMessage } from './Protocol';
 
 export class TcpServer {
   constructor(port, onMessageReceived) {
@@ -88,51 +89,32 @@ export class TcpServer {
         }
 
         // Modo Framing (Mensajes JSON)
-        if (expectedLength === null && receiveBuffer.length >= 4) {
-          expectedLength = receiveBuffer.readUInt32BE(0);
-          receiveBuffer = receiveBuffer.slice(4);
-        }
-
-        if (expectedLength !== null && receiveBuffer.length >= expectedLength) {
-          const fullPayloadBuf = receiveBuffer.slice(0, expectedLength);
-          
-          if (expectedLength < 64) {
-             console.error("[TCP Server] Payload sin HMAC");
-             socket.destroy();
-             return;
-          }
-          
-          const receivedSignatureStr = fullPayloadBuf.slice(0, 64).toString('utf8');
-          const payloadBuf = fullPayloadBuf.slice(64);
-          const payloadStr = payloadBuf.toString('utf8');
-          
-          // Importamos aquí o arriba
-          const hmacSHA256 = require('crypto-js/hmac-sha256');
-          const hexEnc = require('crypto-js/enc-hex');
-          const AUTH_TOKEN = "sysnode_secret_123";
-          
-          const expectedSignatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
-          if (receivedSignatureStr !== expectedSignatureStr) {
-             console.error("[TCP Server] Firma HMAC inválida");
-             socket.destroy();
-             return;
-          }
-          
-          try {
-            const payload = JSON.parse(payloadStr);
-            this.handleIncomingMessage(socket, payload, (meta) => {
-              // Callback si el mensaje fue un FILE_TRANSFER_META
-              isReceivingFile = true;
-              fileMeta = meta;
-              bytesReceived = 0;
-              fileBuffer = Buffer.alloc(0);
-            });
-          } catch (e) {
-            this._sendAck(socket, { status: "ERROR", msg: "Invalid JSON" });
+        let parsed;
+        while ((parsed = parseFramedMessage(receiveBuffer)) !== null) {
+          if (parsed.error) {
+            console.error("[TCP Server] Error parseando trama:", parsed.error);
+            // Si hay un error fatal de framing (ej. mal HMAC), en el protocolo original 
+            // cerramos el socket por seguridad o limpiamos el buffer
+            receiveBuffer = Buffer.alloc(0);
+            break;
           }
 
-          receiveBuffer = receiveBuffer.slice(expectedLength);
-          expectedLength = null;
+          // Mensaje parseado correctamente!
+          const payload = parsed.message;
+          receiveBuffer = parsed.remainingBuffer; // Lo que sobra para la sig. vuelta
+
+          if (payload.type === 'FILE_METADATA' || payload.action === 'FILE_TRANSFER_META') {
+            isReceivingFile = true;
+            fileMeta = payload;
+            bytesReceived = 0;
+            fileBuffer = Buffer.alloc(0);
+            console.log(`[TCP Server] Preparando recepción de archivo: ${fileMeta.filename || 'unknown'} (${fileMeta.filesize_bytes || 0} bytes)`);
+            this.handleIncomingMessage(socket, payload, () => {});
+            continue; // Esperar los bytes crudos
+          }
+
+          // Si es un mensaje de texto normal u otro comando
+          this.handleIncomingMessage(socket, payload, null);
         }
       });
 
@@ -155,52 +137,86 @@ export class TcpServer {
   handleIncomingMessage(socket, payload, onFileMetaReady) {
     const action = payload.action;
 
-    if (action === ActionType.SHARE_TEXT) {
+    if (action === "SHARE_TEXT") {
       if (this.onMessageReceived) {
         this.onMessageReceived({
           type: "TEXT",
           sender: payload.sender_name || "Unknown",
-          text: payload.payload
+          text: payload.payload,
+          ...payload
         });
       }
       this._sendAck(socket, { status: "OK", msg: "Texto recibido por el celular" });
     } 
-    else if (action === ActionType.FILE_TRANSFER_META) {
+    else if (action === "EDIT_MSG") {
+      const { MessageStorage } = require('./MessageStorage');
+      const senderId = payload.sender_id || "unknown";
+      const msgUuid = payload.msg_uuid;
+      const newText = payload.new_text;
+      
+      if (msgUuid && newText) {
+        MessageStorage.updateMessageText(senderId, msgUuid, newText);
+      }
+      
+      if (this.onMessageReceived) {
+        this.onMessageReceived({
+          type: "MSG_EDITED",
+          sender_id: senderId,
+          sender: payload.sender_name || "Unknown",
+          msg_uuid: msgUuid,
+          new_text: newText,
+          ...payload
+        });
+      }
+      this._sendAck(socket, { status: "OK", msg: "Mensaje editado en el celular." });
+    } 
+    else if (action === "FILE_TRANSFER_META") {
       // El servidor remoto quiere enviar un archivo. Respondemos READY para que comience a mandar chunks.
       if (onFileMetaReady) onFileMetaReady(payload);
       this._sendAck(socket, { status: "READY", msg: "Celular listo para recibir archivo" });
     }
-    else if (action === ActionType.REMOTE_CMD) {
+    else if (action === "REMOTE_CMD") {
       // El celular rechaza la ejecución de comandos SysAdmin nativos
       this._sendAck(socket, { 
         status: "ERROR", 
         msg: "El dispositivo móvil no soporta comandos SysAdmin (Bloqueo, Apagado)." 
       });
     }
+    else if (action === "REMOTE_BASH_CMD") {
+      this._sendAck(socket, { 
+        status: "ERROR", 
+        msg: "El dispositivo móvil no soporta comandos bash." 
+      });
+    }
+    else if (action === "PING_NODE") {
+      const { getIdentity } = require('./MyIdentity');
+      const identity = getIdentity();
+      
+      this._sendAck(socket, { 
+        status: "OK", 
+        node_id: identity.node_id,
+        hostname: identity.node_name,
+        os: "Android"
+      });
+    }
     else {
-      this._sendAck(socket, { status: "ERROR", msg: `Acción no soportada: ${action}` });
+      // Si es otro comando o formato viejo
+      if (payload.type === "TEXT" && !action) {
+        if (this.onMessageReceived) this.onMessageReceived(payload);
+        this._sendAck(socket, { status: "OK", msg: "Recibido" });
+      } else {
+        console.warn(`[TCP Server] Acción no reconocida: ${action}`);
+        this._sendAck(socket, { status: "ERROR", msg: `Acción no soportada por el celular: ${action}` });
+      }
     }
   }
 
-  _sendAck(socket, responseObj) {
+  _sendAck(socket, payloadObj) {
     try {
-      const responseStr = JSON.stringify(responseObj);
-      const payloadBuf = Buffer.from(responseStr, 'utf8');
-      
-      const hmacSHA256 = require('crypto-js/hmac-sha256');
-      const hexEnc = require('crypto-js/enc-hex');
-      const AUTH_TOKEN = "sysnode_secret_123";
-      
-      const signatureStr = hmacSHA256(responseStr, AUTH_TOKEN).toString(hexEnc);
-      const signatureBuf = Buffer.from(signatureStr, 'utf8');
-      
-      const lengthBuf = Buffer.alloc(4);
-      lengthBuf.writeUInt32BE(signatureBuf.length + payloadBuf.length, 0);
-      
-      const finalBuf = Buffer.concat([lengthBuf, signatureBuf, payloadBuf]);
-      socket.write(finalBuf);
+      const framedBuffer = createFramedMessage(payloadObj);
+      socket.write(framedBuffer);
     } catch (e) {
-      console.error('[TCP Server] Error enviando ACK:', e);
+      console.error("[TCP Server] Error enviando ACK:", e);
     }
   }
 

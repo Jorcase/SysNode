@@ -60,7 +60,9 @@ export class UdpDiscovery {
         node_id: this.nodeId,
         hostname: this.nodeName,
         tcp_port: this.tcpPort,
-        os: 'Android (React Native)'
+        os: 'Android',
+        device_type: 'mobile',
+        timestamp: Date.now() / 1000
       });
       
       const buf = Buffer.from(payload);
@@ -77,7 +79,11 @@ export class UdpDiscovery {
       this.beaconInterval = null;
     }
     if (this.socket) {
-      this.socket.close();
+      try {
+        this.socket.close();
+      } catch (e) {
+        console.error('[UDP] Error closing socket:', e);
+      }
       this.socket = null;
       console.log('[UDP] Discovery Stopped');
     }

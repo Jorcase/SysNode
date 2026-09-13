@@ -12,9 +12,13 @@ class TestTCPFramingAndCommands(unittest.TestCase):
     def test_tcp_framing_and_messaging(self):
         print("\n--- INICIANDO TEST DE INTEGRACIÓN TCP FRAMING & COMANDOS ---")
 
-        # Instanciar dos nodos en distintos puertos TCP
-        node1 = SysNodeCore(node_name="NodeAlpha", tcp_port=50005)
-        node2 = SysNodeCore(node_name="NodeBeta", tcp_port=50006)
+        import tempfile
+        db1 = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+        db2 = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+
+        # Instanciar dos nodos en distintos puertos TCP y bases de datos aisladas
+        node1 = SysNodeCore(node_name="NodeAlpha", tcp_port=50005, db_path=db1)
+        node2 = SysNodeCore(node_name="NodeBeta", tcp_port=50006, db_path=db2)
 
         try:
             node1.start()
@@ -33,7 +37,7 @@ class TestTCPFramingAndCommands(unittest.TestCase):
             print("Probando envío de texto desde NodeAlpha a NodeBeta...")
             text_to_send = "Mensaje de prueba con framing TCP: https://github.com/jorcas/sysnode"
             node2_q = node2.register_event_queue()
-            success, response_msg = node1.send_text_to_peer(node2.node_id, text_to_send)
+            success, response_msg, _ = node1.send_text_to_peer(node2.node_id, text_to_send)
 
             self.assertTrue(success, f"Error en envío de texto: {response_msg}")
             print(f"✅ Respuesta ACK del servidor: {response_msg}")

@@ -12,9 +12,13 @@ class TestUDPDiscovery(unittest.TestCase):
     def test_two_nodes_discovery(self):
         print("\n--- INICIANDO TEST DE INTEGRACIÓN UDP DISCOVERY ---")
         
-        # Instanciar dos nodos en la misma PC con distintos nombres y puertos TCP
-        node1 = SysNodeCore(node_name="TestNode_Alpha", tcp_port=50001)
-        node2 = SysNodeCore(node_name="TestNode_Beta", tcp_port=50002)
+        import tempfile, os
+        db1 = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+        db2 = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+        
+        # Instanciar dos nodos en la misma PC con distintos nombres, puertos TCP y bases de datos aisladas
+        node1 = SysNodeCore(node_name="TestNode_Alpha", tcp_port=50001, db_path=db1)
+        node2 = SysNodeCore(node_name="TestNode_Beta", tcp_port=50002, db_path=db2)
 
         try:
             node1.start()

@@ -34,6 +34,7 @@ class UDPBeacon(threading.Thread):
         self.tcp_port = tcp_port
         self.hostname = custom_name or HOST_NAME
         self.running = False
+        self.stealth_mode = False
         self._stop_event = threading.Event()
 
     def run(self) -> None:
@@ -46,16 +47,17 @@ class UDPBeacon(threading.Thread):
 
         while not self._stop_event.is_set():
             try:
-                payload: Dict[str, Any] = {
-                    "type": PROTOCOL_TYPE_ANNOUNCE,
-                    "node_id": self.node_id,
-                    "hostname": self.hostname,
-                    "os": SYSTEM_OS,
-                    "tcp_port": self.tcp_port,
-                    "timestamp": time.time(),
-                }
-                data = json.dumps(payload).encode("utf-8")
-                sock.sendto(data, (BROADCAST_IP, UDP_DISCOVERY_PORT))
+                if not self.stealth_mode:
+                    payload: Dict[str, Any] = {
+                        "type": PROTOCOL_TYPE_ANNOUNCE,
+                        "node_id": self.node_id,
+                        "hostname": self.hostname,
+                        "os": SYSTEM_OS,
+                        "tcp_port": self.tcp_port,
+                        "timestamp": time.time(),
+                    }
+                    data = json.dumps(payload).encode("utf-8")
+                    sock.sendto(data, (BROADCAST_IP, UDP_DISCOVERY_PORT))
             except Exception as e:
                 logger.error(f"Error emitiendo UDP Beacon: {e}")
 

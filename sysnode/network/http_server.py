@@ -20,7 +20,9 @@ class SharingHTTPServer:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             self.web_dir = os.path.join(os.path.dirname(current_dir), 'web')
 
-    def start(self):
+    def start(self, port=None):
+        if port is not None:
+            self.port = port
         if self.server is not None:
             logger.warning("El servidor HTTP ya está corriendo.")
             return True

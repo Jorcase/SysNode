@@ -11,6 +11,12 @@ class ActionType(str, Enum):
     EDIT_MSG = "EDIT_MSG"
     REMOTE_BASH_CMD = "REMOTE_BASH_CMD"
     PING_NODE = "PING_NODE"
+    TERM_INIT = "TERM_INIT"
+    TERM_AUTH = "TERM_AUTH"
+    TERM_STDIN = "TERM_STDIN"
+    TERM_STDOUT = "TERM_STDOUT"
+    TERM_RESIZE = "TERM_RESIZE"
+    TERM_CLOSE = "TERM_CLOSE"
     
 class PeerRole(str, Enum):
     SENDER = "SENDER"

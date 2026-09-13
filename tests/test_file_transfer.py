@@ -48,8 +48,12 @@ class TestFileTransfer(unittest.TestCase):
     def test_file_transfer_integrity(self):
         print("\n--- INICIANDO TEST DE INTEGRACIÓN DE TRANSFERENCIA DE ARCHIVOS (5MB) ---")
 
-        node1 = SysNodeCore(node_name="SenderNode", tcp_port=50007)
-        node2 = SysNodeCore(node_name="ReceiverNode", tcp_port=50008)
+        import tempfile
+        db1 = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+        db2 = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+
+        node1 = SysNodeCore(node_name="SenderNode", tcp_port=50007, db_path=db1)
+        node2 = SysNodeCore(node_name="ReceiverNode", tcp_port=50008, db_path=db2)
 
         try:
             node1.start()

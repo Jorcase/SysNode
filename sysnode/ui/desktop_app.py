@@ -34,6 +34,7 @@ class SysNodeDesktopApp(ctk.CTk):
         
         self.core = node_core
         self.selected_node_id = None
+        self.is_logged_in = False
         self.event_queue = self.core.register_event_queue()
         
         # Configuración de Ventana
@@ -86,6 +87,12 @@ class SysNodeDesktopApp(ctk.CTk):
             self.icons['folder'] = ctk.CTkImage(light_image=Image.open(os.path.join(icons_dir, "folder.png")), size=(18, 18))
             self.icons['terminal'] = ctk.CTkImage(light_image=Image.open(os.path.join(icons_dir, "terminal.png")), size=(18, 18))
             self.icons['lock'] = ctk.CTkImage(light_image=Image.open(os.path.join(icons_dir, "lock.png")), size=(18, 18))
+            
+            from PIL import ImageDraw
+            img_check = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
+            draw_check = ImageDraw.Draw(img_check)
+            draw_check.line([(6, 17), (13, 24), (26, 8)], fill="white", width=4)
+            self.icons['check'] = ctk.CTkImage(light_image=img_check, size=(16, 16))
         except Exception as e:
             logger.error(f"Error cargando iconos: {e}")
 
@@ -166,13 +173,81 @@ class SysNodeDesktopApp(ctk.CTk):
         self.content_frame.grid_columnconfigure(0, weight=1)
         
         # Construir Vistas
+        self.build_login_view()
         self.build_welcome_view()
         self.build_profile_view()
         self.build_settings_view()
         self.build_share_view()
         self.build_chat_view()
         
-        # Mostrar Bienvenida por defecto
+        # Mostrar Pantalla de Inicio (Login) por defecto
+        self.show_login()
+
+    def build_login_view(self):
+        self.view_login = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        self.view_login.grid_rowconfigure(0, weight=1)
+        self.view_login.grid_rowconfigure(5, weight=1)
+        self.view_login.grid_columnconfigure(0, weight=1)
+        
+        lbl_title = ctk.CTkLabel(self.view_login, text="SysNode", font=ctk.CTkFont(size=32, weight="bold"))
+        lbl_title.grid(row=1, column=0, pady=(0, 5))
+        
+        lbl_sub = ctk.CTkLabel(self.view_login, text="Configuración de Inicio de Sesión", font=ctk.CTkFont(size=15), text_color="gray70")
+        lbl_sub.grid(row=2, column=0, pady=(0, 25))
+        
+        form_frame = ctk.CTkFrame(self.view_login, fg_color=("gray90", "gray15"), corner_radius=10)
+        form_frame.grid(row=3, column=0, pady=10, padx=20)
+        
+        lbl_name = ctk.CTkLabel(form_frame, text="Nombre de Usuario:", font=ctk.CTkFont(size=13, weight="bold"))
+        lbl_name.pack(anchor="w", padx=25, pady=(20, 5))
+        
+        self.login_entry_name = ctk.CTkEntry(form_frame, width=320, height=36, font=ctk.CTkFont(size=13))
+        self.login_entry_name.insert(0, self.core.node_name)
+        self.login_entry_name.pack(padx=25, pady=(0, 15))
+        
+        lbl_vis = ctk.CTkLabel(form_frame, text="Modo de Visibilidad en Red:", font=ctk.CTkFont(size=13, weight="bold"))
+        lbl_vis.pack(anchor="w", padx=25, pady=(0, 5))
+        
+        self.login_mode_var = ctk.StringVar(value="oculto" if getattr(self.core.udp_beacon, 'stealth_mode', False) else "publico")
+        
+        rb_pub = ctk.CTkRadioButton(form_frame, text="Público (Visible por UDP Broadcast)", variable=self.login_mode_var, value="publico")
+        rb_pub.pack(anchor="w", padx=25, pady=4)
+        
+        rb_oculto = ctk.CTkRadioButton(form_frame, text="Oculto (Conexión directa por TCP / QR)", variable=self.login_mode_var, value="oculto")
+        rb_oculto.pack(anchor="w", padx=25, pady=4)
+        
+        btn_enter = ctk.CTkButton(form_frame, text="Entrar", width=220, height=42, font=ctk.CTkFont(size=14, weight="bold"), command=self.save_login_and_enter)
+        btn_enter.pack(pady=25)
+
+    def save_login_and_enter(self):
+        new_name = self.login_entry_name.get().strip()
+        if new_name:
+            self.core.node_name = new_name
+            self.core.db.set_local_username(new_name)
+            self.core.udp_beacon.hostname = new_name
+            self.title(f"SysNode - {new_name}")
+            if hasattr(self, 'entry_username'):
+                self.entry_username.delete(0, "end")
+                self.entry_username.insert(0, new_name)
+        
+        is_stealth = (self.login_mode_var.get() == "oculto")
+        self.core.udp_beacon.stealth_mode = is_stealth
+        if hasattr(self, 'switch_stealth'):
+            if is_stealth:
+                self.switch_stealth.select()
+            else:
+                self.switch_stealth.deselect()
+                
+        # Marcar usuario como autenticado
+        self.is_logged_in = True
+        
+        # Restaurar layout de 2 columnas con Sidebar visible
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
+        if hasattr(self, 'sidebar_frame'):
+            self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.content_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        
         self.show_welcome()
         
     def build_welcome_view(self):
@@ -194,25 +269,61 @@ class SysNodeDesktopApp(ctk.CTk):
         btn_add = ctk.CTkButton(actions_frame, image=self.icons.get('add'), text=" Añadir IP Manual", width=200, height=45, font=ctk.CTkFont(size=14), command=self.prompt_manual_ip)
         btn_add.pack(side="left", padx=10)
         
-        btn_share = ctk.CTkButton(actions_frame, text=" 🌐 Compartir App (HTTP)", width=240, height=45, font=ctk.CTkFont(size=14), fg_color="#27AE60", hover_color="#1E8449", command=self.start_sharing_server)
+        btn_share = ctk.CTkButton(actions_frame, text="Compartir App (HTTP)", width=240, height=45, font=ctk.CTkFont(size=14), fg_color="#27AE60", hover_color="#1E8449", command=self.start_sharing_server)
         btn_share.pack(side="left", padx=10)
         
     def build_profile_view(self):
         self.view_profile = ctk.CTkFrame(self.content_frame)
         self.view_profile.grid_columnconfigure(0, weight=1)
         
-        header = ctk.CTkLabel(self.view_profile, text="Mi Perfil en Red", font=ctk.CTkFont(size=24, weight="bold"))
+        header = ctk.CTkLabel(self.view_profile, text="Perfil", font=ctk.CTkFont(size=24, weight="bold"))
         header.grid(row=0, column=0, padx=20, pady=20, sticky="w")
         
         # Nombre de Usuario
         frame_name = ctk.CTkFrame(self.view_profile, fg_color="transparent")
         frame_name.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
-        ctk.CTkLabel(frame_name, text="Nombre de Usuario:").pack(side="left", padx=(0, 10))
-        self.entry_username = ctk.CTkEntry(frame_name, width=200)
+        ctk.CTkLabel(frame_name, text="Nombre:").pack(side="left", padx=(0, 10))
+        
+        self.entry_username = ctk.CTkEntry(frame_name, width=220)
         self.entry_username.insert(0, self.core.node_name)
-        self.entry_username.pack(side="left", padx=(0, 10))
-        btn_save_name = ctk.CTkButton(frame_name, text="Guardar", width=80, command=self.save_username)
-        btn_save_name.pack(side="left")
+        self.entry_username.configure(state="disabled")
+        self.entry_username.pack(side="left", padx=(0, 5))
+        
+        self.profile_btn_frame = ctk.CTkFrame(frame_name, fg_color="transparent")
+        self.profile_btn_frame.pack(side="left", padx=(0, 10))
+        
+        self.btn_edit_username = ctk.CTkButton(
+            self.profile_btn_frame, 
+            image=self.icons.get('edit'), 
+            text="", 
+            width=30, 
+            height=30, 
+            fg_color="transparent", 
+            hover_color=("gray85", "gray25"), 
+            command=self.enable_username_editing
+        )
+        self.btn_edit_username.pack(side="left")
+        
+        self.btn_save_username = ctk.CTkButton(
+            self.profile_btn_frame, 
+            image=self.icons.get('check'), 
+            text="", 
+            width=30, 
+            height=30, 
+            fg_color="#27AE60", 
+            hover_color="#1E8449", 
+            command=self.save_username
+        )
+        
+        self.btn_cancel_username = ctk.CTkButton(
+            self.profile_btn_frame, 
+            text="X", 
+            width=30, 
+            height=30, 
+            fg_color="#C0392B", 
+            hover_color="#922B21", 
+            command=self.cancel_username_editing
+        )
         
         import platform
         from sysnode.config import SYSTEM_OS
@@ -291,6 +402,9 @@ class SysNodeDesktopApp(ctk.CTk):
             self.view_remote_profile.grid_remove()
 
     def show_remote_profile(self):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
+            return
         if not self.selected_node_id:
             return
             
@@ -343,12 +457,27 @@ class SysNodeDesktopApp(ctk.CTk):
         header = ctk.CTkLabel(self.view_settings, text="Configuración del Sistema", font=ctk.CTkFont(size=24, weight="bold"))
         header.grid(row=0, column=0, padx=20, pady=20, sticky="w")
         
+        # --- Módulo: Modo Oculto ---
+        lbl_mod_net = ctk.CTkLabel(self.view_settings, text="Visibilidad en Red", font=ctk.CTkFont(size=16, weight="bold"))
+        lbl_mod_net.grid(row=1, column=0, padx=20, pady=(10, 5), sticky="w")
+        
+        frame_stealth = ctk.CTkFrame(self.view_settings, fg_color="transparent")
+        frame_stealth.grid(row=2, column=0, padx=20, pady=5, sticky="ew")
+        self.switch_stealth = ctk.CTkSwitch(
+            frame_stealth, 
+            text="Modo Oculto (Detener Anuncios UDP Broadcast)", 
+            command=self.toggle_stealth_mode
+        )
+        self.switch_stealth.pack(side="left")
+        if getattr(self.core.udp_beacon, 'stealth_mode', False):
+            self.switch_stealth.select()
+
         # --- Módulo: Archivos ---
         lbl_mod_files = ctk.CTkLabel(self.view_settings, text="Archivos y Descargas", font=ctk.CTkFont(size=16, weight="bold"))
-        lbl_mod_files.grid(row=1, column=0, padx=20, pady=(10, 5), sticky="w")
+        lbl_mod_files.grid(row=3, column=0, padx=20, pady=(15, 5), sticky="w")
         
         frame_dl = ctk.CTkFrame(self.view_settings, fg_color="transparent")
-        frame_dl.grid(row=2, column=0, padx=20, pady=5, sticky="ew")
+        frame_dl.grid(row=4, column=0, padx=20, pady=5, sticky="ew")
         frame_dl.grid_columnconfigure(0, weight=1)
         
         current_dl = self.core.get_downloads_dir()
@@ -363,21 +492,119 @@ class SysNodeDesktopApp(ctk.CTk):
         
         btn_change_dl = ctk.CTkButton(btn_frame_dl, text="Cambiar Ruta", width=100, fg_color="#2C3E50", hover_color="#1A252F", command=self.change_downloads_folder)
         btn_change_dl.pack(side="left", padx=5)
+
+        # --- Módulo: Servidor Web HTTP ---
+        lbl_mod_http = ctk.CTkLabel(self.view_settings, text="Servidor Web HTTP (Compartir App)", font=ctk.CTkFont(size=16, weight="bold"))
+        lbl_mod_http.grid(row=5, column=0, padx=20, pady=(15, 5), sticky="w")
+        
+        frame_http = ctk.CTkFrame(self.view_settings, fg_color="transparent")
+        frame_http.grid(row=6, column=0, padx=20, pady=5, sticky="ew")
+        
+        ctk.CTkLabel(frame_http, text="Puerto TCP:").pack(side="left", padx=(0, 5))
+        self.entry_http_port = ctk.CTkEntry(frame_http, width=70)
+        self.entry_http_port.insert(0, str(getattr(self.core.http_server, 'port', 8080)))
+        self.entry_http_port.configure(state="disabled")
+        self.entry_http_port.pack(side="left", padx=(0, 5))
+        
+        self.port_btn_frame = ctk.CTkFrame(frame_http, fg_color="transparent")
+        self.port_btn_frame.pack(side="left", padx=(0, 15))
+        
+        self.btn_edit_port = ctk.CTkButton(
+            self.port_btn_frame, 
+            image=self.icons.get('edit'), 
+            text="", 
+            width=30, 
+            height=30, 
+            fg_color="transparent", 
+            hover_color=("gray85", "gray25"), 
+            command=self.enable_port_editing
+        )
+        self.btn_edit_port.pack(side="left")
+        
+        self.btn_save_port = ctk.CTkButton(
+            self.port_btn_frame, 
+            image=self.icons.get('check'), 
+            text="", 
+            width=30, 
+            height=30, 
+            fg_color="#27AE60", 
+            hover_color="#1E8449", 
+            command=self.save_http_port
+        )
+        
+        self.btn_cancel_port = ctk.CTkButton(
+            self.port_btn_frame, 
+            text="X", 
+            width=30, 
+            height=30, 
+            fg_color="#C0392B", 
+            hover_color="#922B21", 
+            command=self.cancel_port_editing
+        )
+        
+        btn_view_http = ctk.CTkButton(
+            frame_http, 
+            text="Compartir App", 
+            fg_color="#27AE60", 
+            hover_color="#1E8449", 
+            command=self.show_share
+        )
+        btn_view_http.pack(side="left", padx=5)
         
         # --- Módulo: Comandos ---
         lbl_cmds = ctk.CTkLabel(self.view_settings, text="Comandos Personalizados (JSON)", font=ctk.CTkFont(size=16, weight="bold"))
-        lbl_cmds.grid(row=3, column=0, padx=20, pady=(20, 5), sticky="w")
+        lbl_cmds.grid(row=7, column=0, padx=20, pady=(15, 5), sticky="w")
         
-        # Scrollable Frame para la lista de comandos
-        self.cmds_frame = ctk.CTkScrollableFrame(self.view_settings, height=200)
-        self.cmds_frame.grid(row=4, column=0, padx=20, pady=5, sticky="nsew")
-        self.view_settings.grid_rowconfigure(4, weight=1)
+        self.cmds_frame = ctk.CTkScrollableFrame(self.view_settings, height=150)
+        self.cmds_frame.grid(row=8, column=0, padx=20, pady=5, sticky="nsew")
+        self.view_settings.grid_rowconfigure(8, weight=1)
         
-        # Botón para añadir nuevo comando
         btn_add_cmd = ctk.CTkButton(self.view_settings, image=self.icons.get('add'), text=" Nuevo Comando", fg_color="#2C3E50", hover_color="#1A252F", command=self.prompt_new_command)
-        btn_add_cmd.grid(row=5, column=0, padx=20, pady=10, sticky="w")
+        btn_add_cmd.grid(row=9, column=0, padx=20, pady=10, sticky="w")
         
         self.load_custom_commands_ui()
+
+    def enable_port_editing(self):
+        self.entry_http_port.configure(state="normal")
+        self.entry_http_port.focus()
+        self.btn_edit_port.pack_forget()
+        self.btn_save_port.pack(side="left", padx=2)
+        self.btn_cancel_port.pack(side="left", padx=2)
+
+    def cancel_port_editing(self):
+        self.entry_http_port.configure(state="normal")
+        self.entry_http_port.delete(0, "end")
+        current_port = str(getattr(self.core.http_server, 'port', 8080))
+        self.entry_http_port.insert(0, current_port)
+        self.entry_http_port.configure(state="disabled")
+        
+        self.btn_save_port.pack_forget()
+        self.btn_cancel_port.pack_forget()
+        self.btn_edit_port.pack(side="left")
+
+    def save_http_port(self):
+        val = self.entry_http_port.get().strip()
+        if not val.isdigit() or not (1024 <= int(val) <= 65535):
+            messagebox.showerror("Error de Puerto", "Ingresá un número de puerto válido entre 1024 y 65535.")
+            return
+            
+        new_port = int(val)
+        self.core.http_server.port = new_port
+        self.entry_http_port.configure(state="disabled")
+        
+        self.btn_save_port.pack_forget()
+        self.btn_cancel_port.pack_forget()
+        self.btn_edit_port.pack(side="left")
+        
+        messagebox.showinfo("Puerto Guardado", f"El servidor HTTP fue configurado para usar el puerto {new_port}.")
+
+    def toggle_stealth_mode(self):
+        is_stealth = self.switch_stealth.get() == 1
+        self.core.udp_beacon.stealth_mode = is_stealth
+        if is_stealth:
+            messagebox.showinfo("Modo de Red", "Modo Oculto ACTIVADO.\nTu equipo no emitirá anuncios UDP Broadcast, permaneciendo invisible en la LAN.")
+        else:
+            messagebox.showinfo("Modo de Red", "Modo Público ACTIVADO.\nTu equipo emitirá anuncios UDP Broadcast normalmente.")
         
         # Botón Volver (Removido porque ahora está fijo en el sidebar)
         
@@ -503,8 +730,14 @@ class SysNodeDesktopApp(ctk.CTk):
         self.lbl_share_qr = ctk.CTkLabel(self.view_share, text="")
         self.lbl_share_qr.grid(row=4, column=0, pady=(0, 30))
         
-        btn_close = ctk.CTkButton(self.view_share, text="Detener y Volver", fg_color="#C0392B", hover_color="#922B21", command=self.stop_sharing_server)
-        btn_close.grid(row=5, column=0, pady=20)
+        btn_frame = ctk.CTkFrame(self.view_share, fg_color="transparent")
+        btn_frame.grid(row=5, column=0, pady=20)
+        
+        btn_stop = ctk.CTkButton(btn_frame, text="Detener Servidor", fg_color="#C0392B", hover_color="#922B21", command=self.stop_sharing_server)
+        btn_stop.pack(side="left", padx=10)
+        
+        btn_back = ctk.CTkButton(btn_frame, text="Volver", fg_color="#34495E", hover_color="#2C3E50", command=self.show_welcome)
+        btn_back.pack(side="left", padx=10)
         
     def build_chat_view(self):
         self.view_chat = ctk.CTkFrame(self.content_frame, corner_radius=0, fg_color="transparent")
@@ -520,25 +753,43 @@ class SysNodeDesktopApp(ctk.CTk):
         self.chat_header = ctk.CTkFrame(self.view_chat, height=50, corner_radius=8)
         self.chat_header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         
+        self.chat_device_icon = ctk.CTkLabel(self.chat_header, text="", image=self.icons.get('laptop'), width=24)
+        self.chat_device_icon.pack(side="left", padx=(15, 5), pady=10)
+        
         self.chat_title = ctk.CTkLabel(self.chat_header, text="Seleccioná un dispositivo para chatear", font=ctk.CTkFont(size=16, weight="bold"), cursor="hand2")
-        self.chat_title.pack(side="left", padx=15, pady=10)
+        self.chat_title.pack(side="left", padx=5, pady=10)
         self.chat_title.bind("<Button-1>", lambda e: self.show_remote_profile())
         
-        # En la cabecera del chat, botón para abrir descargas
+        # En la cabecera del chat: Botón Descargas y Menú de 3 Puntos
         btn_header_frame = ctk.CTkFrame(self.chat_header, fg_color="transparent")
         btn_header_frame.pack(side="right", padx=10)
         
-        btn_clear_chat = ctk.CTkButton(btn_header_frame, text=" Limpiar Chat", width=120, fg_color="#C0392B", hover_color="#922B21", 
-                                        command=self.clear_current_chat)
-        btn_clear_chat.pack(side="left", padx=2)
-        
-        btn_open_folder = ctk.CTkButton(btn_header_frame, image=self.icons.get('folder'), text=" Abrir Descargas", width=120, fg_color="#34495E", hover_color="#2C3E50", 
+        btn_open_folder = ctk.CTkButton(btn_header_frame, image=self.icons.get('folder'), text="", width=32, height=32, fg_color="transparent", hover_color=("gray85", "gray25"), 
                                         command=self.open_downloads_folder)
         btn_open_folder.pack(side="left", padx=2)
+        
+        btn_header_menu = ctk.CTkButton(btn_header_frame, text="⋮", width=32, height=32, fg_color="transparent", hover_color=("gray85", "gray25"), font=("Arial", 16, "bold"),
+                                         command=self.show_chat_header_menu)
+        btn_header_menu.pack(side="left", padx=2)
         
         # Área de mensajes (Textbox)
         self.chat_scroll = ctk.CTkScrollableFrame(self.view_chat, fg_color="transparent")
         self.chat_scroll.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
+        
+        # Habilitar desplazamiento suave con la rueda del mouse (evitar saltos directo a extremos)
+        def _on_chat_scroll(event):
+            if hasattr(self, 'view_chat') and self.view_chat.winfo_ismapped():
+                canvas = self.chat_scroll._parent_canvas
+                if event.num == 4:
+                    canvas.yview_scroll(-3, "units")
+                elif event.num == 5:
+                    canvas.yview_scroll(3, "units")
+                elif getattr(event, 'delta', 0) != 0:
+                    amount = int(-1 * (event.delta / 40)) if abs(event.delta) >= 40 else (-3 if event.delta > 0 else 3)
+                    canvas.yview_scroll(amount, "units")
+
+        self.chat_scroll._parent_canvas.bind_all("<Button-4>", _on_chat_scroll)
+        self.chat_scroll._parent_canvas.bind_all("<Button-5>", _on_chat_scroll)
         
         # Barra inferior (Input + Botones)
         self.input_frame = ctk.CTkFrame(self.view_chat, corner_radius=8)
@@ -568,8 +819,32 @@ class SysNodeDesktopApp(ctk.CTk):
         # Progress bar oculta por defecto
         self.progress_bar = ctk.CTkProgressBar(self.view_chat)
         self.progress_bar.set(0)
-        
+
+    def show_chat_header_menu(self):
+        import tkinter as tk
+        menu = tk.Menu(self, tearoff=0, bg="#2B2B2B", fg="white", activebackground="#34495E", activeforeground="white")
+        menu.add_command(label="Ver perfil", command=self.show_remote_profile)
+        menu.add_command(label="Vaciar chat", command=self.clear_current_chat)
+        try:
+            x = self.winfo_pointerx()
+            y = self.winfo_pointery()
+            menu.tk_popup(x, y)
+        except Exception:
+            pass
+
     def hide_all_views(self):
+        if hasattr(self, 'view_share') and self.view_share.winfo_ismapped():
+            if getattr(self.core, 'http_server', None) and self.core.http_server.server is not None:
+                if not getattr(self, '_switching_view', False):
+                    self._switching_view = True
+                    try:
+                        if messagebox.askyesno("Servidor HTTP Encendido", "¿Querés detener el servidor HTTP antes de cambiar de sección?"):
+                            self.core.stop_sharing_server()
+                    finally:
+                        self._switching_view = False
+
+        if hasattr(self, 'view_login'):
+            self.view_login.grid_remove()
         self.view_welcome.grid_remove()
         self.view_chat.grid_remove()
         self.view_share.grid_remove()
@@ -578,64 +853,127 @@ class SysNodeDesktopApp(ctk.CTk):
         if hasattr(self, 'view_remote_profile'):
             self.view_remote_profile.grid_remove()
 
+    def update_share_view_content(self):
+        is_running = getattr(self.core, 'http_server', None) and self.core.http_server.server is not None
+        if not is_running:
+            port = getattr(self.core.http_server, 'port', 8080)
+            url = self.core.start_sharing_server(port=port)
+        else:
+            url = f"http://{self.core.local_ip}:{self.core.http_server.port}"
+            
+        if hasattr(self, 'lbl_share_url'):
+            self.lbl_share_url.configure(state="normal")
+            self.lbl_share_url.delete(0, "end")
+            self.lbl_share_url.insert(0, url)
+            self.lbl_share_url.configure(state="readonly")
+            
+        if hasattr(self, 'lbl_share_qr'):
+            try:
+                import qrcode
+                qr = qrcode.QRCode(box_size=8, border=2)
+                qr.add_data(url)
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white").get_image()
+                ctk_img = ctk.CTkImage(light_image=img, size=(200, 200))
+                self.lbl_share_qr.configure(image=ctk_img, text="")
+            except Exception as e:
+                logger.error(f"Error generando QR HTTP: {e}")
+                self.lbl_share_qr.configure(text=f"Dirección Web: {url}")
+
+    def show_login(self):
+        self.is_logged_in = False
+        self.selected_node_id = None
+        if hasattr(self, 'sidebar_frame'):
+            self.sidebar_frame.grid_remove()
+        if hasattr(self, 'content_frame'):
+            self.content_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
+        self.hide_all_views()
+        if hasattr(self, 'view_login'):
+            self.view_login.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+
     def show_welcome(self):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
+            return
         self.selected_node_id = None
         self.hide_all_views()
         self.view_welcome.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
     def show_profile(self):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
+            return
         self.selected_node_id = None
         self.hide_all_views()
         self.view_profile.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
     def show_settings(self):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
+            return
         self.selected_node_id = None
         self.hide_all_views()
+        if hasattr(self, 'switch_stealth'):
+            if getattr(self.core.udp_beacon, 'stealth_mode', False):
+                self.switch_stealth.select()
+            else:
+                self.switch_stealth.deselect()
         self.view_settings.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
-    def show_share(self):
-        self.selected_node_id = None
-        self.hide_all_views()
-        self.view_share.grid(row=0, column=0, sticky="nsew")
-        
     def show_chat(self):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
+            return
         self.hide_all_views()
         self.view_chat.grid(row=0, column=0, sticky="nsew")
+
+    def enable_username_editing(self):
+        self.entry_username.configure(state="normal")
+        self.entry_username.focus()
+        self.btn_edit_username.pack_forget()
+        self.btn_save_username.pack(side="left", padx=2)
+        self.btn_cancel_username.pack(side="left", padx=2)
+
+    def cancel_username_editing(self):
+        self.entry_username.configure(state="normal")
+        self.entry_username.delete(0, "end")
+        self.entry_username.insert(0, self.core.node_name)
+        self.entry_username.configure(state="disabled")
         
+        self.btn_save_username.pack_forget()
+        self.btn_cancel_username.pack_forget()
+        self.btn_edit_username.pack(side="left")
+
     def save_username(self):
         new_name = self.entry_username.get().strip()
         if new_name:
             self.core.node_name = new_name
             self.core.db.set_local_username(new_name)
             self.core.udp_beacon.custom_name = new_name
+            self.core.udp_beacon.hostname = new_name
+            self.title(f"SysNode - {new_name}")
+            
+            if hasattr(self, 'login_entry_name'):
+                self.login_entry_name.delete(0, "end")
+                self.login_entry_name.insert(0, new_name)
+                
+            self.entry_username.configure(state="disabled")
+            self.btn_save_username.pack_forget()
+            self.btn_cancel_username.pack_forget()
+            self.btn_edit_username.pack(side="left")
+            
             messagebox.showinfo("Guardado", "Nombre de usuario actualizado.")
-            
-    def start_sharing_server(self):
-        url = self.core.start_sharing_server()
-        if not url:
-            messagebox.showerror("Error", "No se pudo iniciar el servidor HTTP local.")
+
+    def show_share(self):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
             return
-            
-        self.lbl_share_url.configure(state="normal")
-        self.lbl_share_url.delete(0, "end")
-        self.lbl_share_url.insert(0, url)
-        self.lbl_share_url.configure(state="readonly")
-        
-        try:
-            import qrcode
-            qr = qrcode.QRCode(box_size=8, border=2)
-            qr.add_data(url)
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
-            
-            # Extract PIL Image from qrcode image wrapper
-            pil_img = img.get_image()
-            
-            ctk_img = ctk.CTkImage(light_image=pil_img, size=(200, 200))
-            self.lbl_share_qr.configure(image=ctk_img, text="")
-        except ImportError:
-            self.lbl_share_qr.configure(text="(Librería 'qrcode' o 'Pillow' no instalada)")
-            
+        self.selected_node_id = None
+        self.hide_all_views()
+        self.update_share_view_content()
+        self.view_share.grid(row=0, column=0, sticky="nsew")
+
+    def start_sharing_server(self):
         self.show_share()
         
     def stop_sharing_server(self):
@@ -663,14 +1001,12 @@ class SysNodeDesktopApp(ctk.CTk):
             
         recent_messages = self.core.db.get_chat_history(node_id, limit=50)
         if not recent_messages:
-            self.append_to_chat("--- No hay mensajes previos con este dispositivo ---", add_timestamp=False)
             return
             
         info = self.known_devices.get(node_id, {})
         remote_name = info.get("hostname", "Remoto")
             
         for msg_uuid, ts, text, direction in recent_messages:
-            time_only = ts.split(" ")[1]
             sender_str = remote_name if direction == "IN" else "Yo"
             
             if text.startswith("FILE:"):
@@ -693,30 +1029,48 @@ class SysNodeDesktopApp(ctk.CTk):
                 else:
                     self.append_to_chat(f"[SysAdmin] Resultado enviado a {remote_name}: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
             else:
-                self.append_to_chat(f"[{sender_str}]: {text}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                self.append_to_chat(f"{text}", add_timestamp=True, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
                 
-        self.append_to_chat("--- Historial cargado ---", add_timestamp=False)
+        self.update_idletasks()
+        self.chat_scroll._parent_canvas.yview_moveto(1.0)
         
     def append_to_chat(self, text, add_timestamp=True, raw_msg="", msg_uuid=None, direction=None):
         if not raw_msg:
             raw_msg = text
             
-        msg_frame = ctk.CTkFrame(self.chat_scroll, fg_color=("gray85", "gray20"))
-        msg_frame.pack(fill="x", pady=2, padx=5)
+        is_out = (direction == "OUT")
         
-        if add_timestamp:
-            now_time = datetime.datetime.now().strftime("%H:%M:%S")
-            text = f"[{now_time}] {text}"
-            
-        lbl_msg = ctk.CTkLabel(msg_frame, text=text, justify="left", wraplength=450, anchor="w")
-        lbl_msg.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        outer_frame = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
+        outer_frame.pack(fill="x", pady=3, padx=5)
         
-        # Botón Copiar si hay mensaje (omitir para notificaciones de sistema p.ej "Historial cargado")
-        if add_timestamp or "[Remoto]" in text or "[Yo]" in text:
-            import tkinter as tk
-            
-            btn_options = ctk.CTkButton(msg_frame, text="⋮", width=30, height=30, fg_color="transparent", 
-                                        hover_color=("gray75", "gray30"), font=("Arial", 18, "bold"))
+        msg_frame = ctk.CTkFrame(
+            outer_frame, 
+            fg_color=("#2563eb", "#1d4ed8") if is_out else ("gray85", "gray20"),
+            corner_radius=6
+        )
+        msg_frame.pack(side="right" if is_out else "left", padx=5)
+        
+        lbl_msg = ctk.CTkLabel(
+            msg_frame, 
+            text=text, 
+            justify="left", 
+            wraplength=450, 
+            anchor="w",
+            text_color="white" if is_out else ("gray10", "gray90")
+        )
+        lbl_msg.pack(side="left", padx=8, pady=6)
+        
+        import tkinter as tk
+        if msg_uuid:
+            btn_options = ctk.CTkButton(
+                msg_frame, 
+                text="⋮", 
+                width=24, 
+                height=24, 
+                fg_color="transparent", 
+                hover_color=("gray75", "gray30"), 
+                font=("Arial", 14, "bold")
+            )
             btn_options.pack(side="right", padx=2)
             
             def show_options_menu(e, u=msg_uuid, m=raw_msg, d=direction):
@@ -725,18 +1079,22 @@ class SysNodeDesktopApp(ctk.CTk):
                     menu.add_command(label="Editar", command=lambda: self.prompt_edit_message(u, m))
                 menu.add_command(label="Borrar", command=lambda: self.delete_single_message(u))
                 menu.tk_popup(e.x_root, e.y_root)
-                
-            if msg_uuid:
-                btn_options.bind("<Button-1>", show_options_menu)
-            else:
-                btn_options.configure(state="disabled")
+
+            btn_options.bind("<Button-1>", show_options_menu)
+
+        btn_copy = ctk.CTkButton(
+            msg_frame, 
+            image=self.icons.get('copy'), 
+            text="", 
+            width=24, 
+            height=24, 
+            fg_color="transparent", 
+            hover_color=("gray75", "gray30"),
+            command=lambda m=raw_msg: self.copy_to_clipboard(m)
+        )
+        btn_copy.pack(side="right", padx=2)
             
-            btn_copy = ctk.CTkButton(msg_frame, image=self.icons.get('copy'), text="", width=30, height=30, fg_color="transparent", 
-                                     hover_color=("gray75", "gray30"),
-                                     command=lambda m=raw_msg: self.copy_to_clipboard(m))
-            btn_copy.pack(side="right", padx=5)
-            
-        # Scroll al fondo (hack en customtkinter)
+        self.update_idletasks()
         self.chat_scroll._parent_canvas.yview_moveto(1.0)
         
     def prompt_edit_message(self, msg_uuid, old_text):
@@ -877,11 +1235,14 @@ class SysNodeDesktopApp(ctk.CTk):
         self.chat_scroll._parent_canvas.yview_moveto(1.0)
 
     def on_node_select(self, node_id, hostname):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
+            return
         self.show_chat()
         self.selected_node_id = node_id
         logger.info(f"[UI] Dispositivo seleccionado: {hostname} ({node_id[:8]})")
         
-        self.chat_title.configure(text=f"Chat con: {hostname}")
+        self.chat_title.configure(text=f"{hostname}")
         
         # Remove unread badge if any
         if node_id in getattr(self, 'unread_badges', {}):
@@ -893,13 +1254,18 @@ class SysNodeDesktopApp(ctk.CTk):
             else:
                 frame._select_btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
                 
-        # Ocultar o mostrar botón de comandos según el SO
-        if node_id in getattr(self, 'known_devices', {}):
-            os_type = self.known_devices[node_id].get('os_type', '')
-            if 'Android' in os_type or 'iOS' in os_type:
-                self.btn_cmd.grid_remove() # Ocultar Comandos
-            else:
-                self.btn_cmd.grid() # Mostrar Comandos
+        info = self.known_devices.get(node_id, {})
+        os_type = info.get('os_type', '')
+        os_lower = os_type.lower()
+        is_desktop = any(k in os_lower for k in ["desktop", "windows", "linux", "darwin", "mac", "pc"])
+        header_icon = self.icons.get('laptop') if is_desktop else self.icons.get('smartphone')
+        if hasattr(self, 'chat_device_icon'):
+            self.chat_device_icon.configure(image=header_icon)
+            
+        if 'Android' in os_type or 'iOS' in os_type or 'smartphone' in os_lower:
+            self.btn_cmd.grid_remove() # Ocultar Comandos
+        else:
+            self.btn_cmd.grid() # Mostrar Comandos
                 
         self.load_chat_history(node_id)
 
@@ -913,6 +1279,9 @@ class SysNodeDesktopApp(ctk.CTk):
             self.chat_title.configure(text="Dispositivo eliminado.")
 
     def prompt_manual_ip(self):
+        if not getattr(self, 'is_logged_in', False):
+            self.show_login()
+            return
         dialog = ctk.CTkInputDialog(text="Ingresá IP:Puerto (ej: 192.168.0.10:50001):", title="Añadir Manual")
         user_input = dialog.get_input()
         if user_input:
@@ -1274,7 +1643,8 @@ class SysNodeDesktopApp(ctk.CTk):
         for node_id, info in self.known_devices.items():
             is_online = node_id in current_peers
             
-            is_desktop = "Desktop" in info['os_type'] or "Windows" in info['os_type'] or "Linux" in info['os_type'] or "darwin" in info['os_type'].lower()
+            os_lower = info.get('os_type', '').lower()
+            is_desktop = any(k in os_lower for k in ["desktop", "windows", "linux", "darwin", "mac", "pc"])
             
             # Si es manual y está offline, usar icono de red genérico en vez de móvil
             is_manual = info.get('manual', False) or (node_id.startswith("manual_"))

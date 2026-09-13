@@ -28,13 +28,13 @@ class SysNodeCore:
     y mantiene desacoplada la lógica de red de cualquier interfaz (UI, CLI o Web).
     """
 
-    def __init__(self, node_name: str = None, tcp_port: int = DEFAULT_TCP_PORT):
+    def __init__(self, node_name: str = None, tcp_port: int = DEFAULT_TCP_PORT, db_path: str = None):
         self.tcp_port = tcp_port
         self.local_ip = get_local_lan_ip()
         
         # Database para persistencia de chat y configuraciones (Inicializar primero)
-        db_path = os.path.join(os.getcwd(), "SysNode_Received", "history.db")
-        self.db = SysNodeDatabase(db_path)
+        target_db_path = db_path or os.path.join(os.getcwd(), "SysNode_Received", "history.db")
+        self.db = SysNodeDatabase(target_db_path)
 
         # Identidad Persistente del Nodo
         self.node_id = self.db.get_or_create_device_uuid()
@@ -172,13 +172,14 @@ class SysNodeCore:
         if not peer:
             return
             
-        for msg_id, text in pending:
+        for msg_id, text, msg_uuid in pending:
             success, _ = TCPClient.send_text(
                 peer_ip=peer["ip"],
                 peer_port=peer["tcp_port"],
                 sender_id=self.node_id,
                 sender_name=self.node_name,
-                text=text
+                text=text,
+                msg_uuid=msg_uuid
             )
             if success:
                 self.db.mark_message_delivered(msg_id)
@@ -302,9 +303,9 @@ class SysNodeCore:
         )
         return success, response
         
-    def start_sharing_server(self) -> str:
+    def start_sharing_server(self, port: int = 8080) -> str:
         """Inicia el servidor HTTP y devuelve la URL local."""
-        self.http_server.start()
+        self.http_server.start(port=port)
         return f"http://{self.local_ip}:{self.http_server.port}"
         
     def stop_sharing_server(self):

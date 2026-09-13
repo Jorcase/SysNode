@@ -1,0 +1,45 @@
+Para la app movil:
+al iniciar la app aparece la opcion para elegir el modo, esta bien pero me gustaria configurar lo que se ve, prefiero que diga sysnode solamente abajo el nombre y modo de visibilidad aqui dice publico visible por udp esta bien pero oculto dice (stealth) eso no es necesario y tambien dice inseguro nose porque e invisible, ahi deberia decir visible por conexion tcp o no me acuerdo como funcionaba el modo oculto la verdad, pero deberiamos mejorar esto. el boton para poner okey tiene mucho texto, deberia decir simplemente entrar y ya esta.
+en la pantalla siguiente que es la principal, arriba lo de buscar esta bien pero tiene demasiad altura, deberia ser mas sutil con eso y que se adapte bien al header luego lo de publico oculto para cambiar prefiero que eso vaya a configuracion y sea como un doble opcion y en donde se apriete es el elegido
+cuando no hay nodos activos deberian aparecer los nodos con los que hemos chateado, por algo teniamos la persistencia de los chats, si no hay nodos activos no se ve nada.
+necesitamos diferenciar los nodos activos y los inactivos, y cuando hay uno activo pero se pone en inactivo deberiamos poder ver ese cambio de estado.
+si yo me pongo modo oculto desde el movil y desde la pc estoy activo, la pc no me puede enviar mensajes pero yo a ella si al parecer.
+entrando al chat los mensajes de solo texto andan bien.
+al enviar una foto sacada con la camara osea esa funcion funciona bien y se envia desde el movil. pero el texto dice algo asi como esto:📸 Foto enviada (d787855d-07e5-48f7-b097-c95111051b07.jpeg) osea debajo de la imagen o bueno pegada, yo creo que eso no es necesario. ya con la imagen se puede ver bien, deberia poder abrirse la imagen y no solamente ver la previsualizacion de ella en el chat.
+la funcion de enviar algo de galeria funciona bien aunque solo aparecen fotos, no videos nose si tenemos configurado para enviar videos pero deberia dejar.
+al enviar un archivo solo muestra un emoji:📄 Archivo enviado (comprobante (3).pdf), aqui deberia dejar poder apretar y abrir el archivo.
+algo que me paso ahora probando esque en un moneto fallo la conexion y no se enviaban los mensajes como si se hubiera desconectado y tuve que salir de los dos chats tanto en movil como en escritorio para conectarme de nuevo(cuando voy a enviar un archivo se abre una app externa en el movil para poder navegar y buscar el archivo que queremos enviar, creo que ahi falla conexion y toma como que el nodo del movil se desconecto, todo esto trabjando con modo publico)
+cuando entro y salgo del chat no me lleva a los ultimos mensajes enviados sino  a casi el principio de la conversacion
+la funcion de comando desde el boton del + muestra comandos diferentes a los que teniamos, ademas muestra el listado de ellos con su titulo y el comando debajo, nose si debia ser asi, no me termina de agradar visualmente.
+ademas al intentar utilizarlos pasa esto:[SysAdmin] Resultado enviado a Andro Jorge: [FAIL] Comando ejecutado: REMOTE_BASH_BLOCKED
+Resultado:
+ACCESO DENEGADO: La ejecución de comandos shell arbitrarios está deshabilitada por políticas de seguridad de SysNode.
+ya que estamos yendo a configuracion al apartado de comandos:
+la creacion de un comando muestra nombre y comando bash/ script lo cual difiere bastante de como se crea un comando desde pc que era con un json y aclarando para que SO era dicho comando o si era un comando realizado para varios SO. Deberia dejar borrar comandos, actualmente no me deja borrar los que estan en la app movil.
+volvienod al chat:
+fijate en descargas la imagen 1000282503.jpg muestra que pasa al querer poner el codigo que ofrece para acceder a la terminal remota, osea falla aunque este bien el codigo puesto
+los mensajes no se pueden editar y creo que si habiamos puesto la funcionalidad esa, habria que revisar como interactua esto con la app de escritorio
+por otra parte si se puede editar desde la app de escritorio y lo edita y el cambio en la app de escritorio se ve pero desde la app movil tengo que salir y volver a entrar al chat para ver el cambio.
+whatsapp no permite editar todo el tiempo los mensajes, tenes una brecha de tiempo y despues ya no esta disponible la opcion al igual que borrar, nose si eso facilita el trabajo de la app con estas funciones o es una regla que tiene whatsapp, si eso nos facilita el desarrollo para las funcionalidades de borrar o editar mensajes lo implementamos, si lo vuelve mas dificil entonces simplemente lo dejemos sin esa brecha de tiempo.
+cuando apretamos en el nombre en el chat del usuario con el que estamos comunicandonos se abre un modal bastante pequeño que muestra toda la informacion y un boton para ver la carpeta de archivos compartidos, que deberia decir solo eso es redundante tener un /descargas, ademas falta opcion de vaciar chat que te habia dicho. en los 3 puntitos del chat deberia aparecer otras cosas que aun no defino pero seria algo asi como seleccionar mensajes, buscar en la conversacion o ver perfil o bueno vaciar chat.
+yendo al apartado de configuracion en la app movil:
+lo de almacenamienot y descargas no esta realizado como habiamos acordado, deberia mostrar el path de donde esta la carpeta en donde actualmente se estan guardando las cosas que bueno eso si esta pero falta el boton para abrir la carpeta y el boton para cambiar la carpeta en donde queremos que se guarden las cosas, despues agregaste dos botones que yo no pedi y no quiero que son los de compartir archivos recibidos y vaciar archivos recibidos, no los quiero. 
+cuando cambio el nombre de un nodo este nombre no se actualiza en la app
+GENERAL DE LA APP MOVIL:
+no quiero que los modales o las ventanas sean curvas osea sus esquinas, quiero algo minimalizaste que respete con la estetica de sysnode, nada de emojis dijimos. botones con colores minimalistas pero que muestren el tipo de accion que se realiza.
+yo a mi celular lo tengo para utilizar con gestos y por ejemplo en esta app el gesto de volver atras no funciona en todas las pantallas y eso vuelve tediosa la navegacion, quiero que tengas en cuenta eso y lo veamos en algun momento cuando terminemos todas las revisiones de la app.
+
+para la app de escritorio:
+Primero que nada al iniciar la app de escritorio no aparece para elegir el nombre y el modo en el que nos queremos conectar, creo que no lo hemos implementado deberia ser similar al de la app movil.
+en el apartado donde uno va al propio  perfil deberia decir simplemente perfil actualmente dice mi perfil en red es muy redundante. El campo de nombre deberia tener un lapicito para poder editar y un okey para guardar.
+al entrar a un chat muestra el comienzo de la conversacion en vez de redirigirnos hacia lo ultimo del chat. cuando llega un mensaje se queda estatico y nada indica que ha llegado uno nuevo como para darse cuenta que hay que bajar
+cuando nosotros enivamos un mensaje intenta bajar pero baja hasta antes del mensaje enviado
+los botones de arriba en el chat donde aparece el nombre deberia aparecer icono del tipo de dispositivo y el nombre con el que se identifica, los botones de limpiar y carpetas deberian ser iconos modernos que estamos utilizando y deberia haber un boton de 3 puntitos que tenga esas acciones como seleccionar mensajes, buscar en la conversacion o ver perfil o bueno vaciar chat.
+cuando aprieto en el perfil deberia mostrar mejor la informacion del dispositivo con el que hablamos. 
+aqui no tenemos la opcion de remote shell solo la funcionalidad de comandos enviar archivos y texto
+esta medio buggeado la comunicacion entre dos pcs, entro al chat y no me aparece el historial, muevo la ruedita del mouse y ahi recien aparece
+los mensajes ajenos no aparecen para copiar si son del historial cargado, por cierto eso me molesta el mensaje de historial cargado, ademas cuando editamos un mensaje el mensaje editado se pocisiona debajo de este
+deberiamos implementar que desde la izquierda se vean los mensajes del otro dispositvo y de la derecha el nuestro. pero de igual manera los dos mensajes deberian poder copiarse sin importar el historial cargado o no
+podriamos hacer que se pueda elegir el puerto en el que queremos compartir el servidor http? podriamos mejorar las vistas de esto, podriamos mostrar informacion breve de un costado de sysnode diviendo la pantalla en 2 por si decir y de la derecha mostrar la opcion de descargar de una manera mas agradable para el usuario. Es posible hacer que el servidor http tenga un certificado de seguridad para que sea https o es mucho quilombo hacer eso?
+si yo no detengo con el boton el servidor http y me voy a hacer otras cosas este queda prendido, antes de cambiar de pestaña deberia preguntar si queremos apagarlo o no.
+desde inicio es la unica manera de llegar a esta funcionalidad del servidor http deberiamos poner en configuracion la forma de ir hacia ahi y de paso si esque se puede ahi configurar el puerto.

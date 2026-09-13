@@ -103,6 +103,7 @@ class TCPClientHandlerThread(threading.Thread):
         self.download_dir_getter = download_dir_getter
 
     def run(self) -> None:
+        keep_socket_open = False
         try:
             self.client_sock.settimeout(10.0)  # Timeout de inactividad por socket
             payload = receive_framed_message(self.client_sock)
@@ -124,8 +125,6 @@ class TCPClientHandlerThread(threading.Thread):
                     "node_id": self.node_id,
                     "hostname": self.node_name,
                     "os": SYSTEM_OS,
-                    # Para el TCP puerto, como no lo tenemos en el TCPWorker, podemos pasarlo si es necesario.
-                    # Pero en realidad, el nodo remoto se conectó a él, así que ya sabe el puerto, o podemos ignorarlo.
                 }
                 send_framed_message(self.client_sock, response)
                 return
@@ -185,33 +184,20 @@ class TCPClientHandlerThread(threading.Thread):
                 })
 
             elif action == ActionType.REMOTE_BASH_CMD:
-                bash_cmd = payload.get("bash_command", "")
-                logger.info(f"Solicitud de BASH remoto custom: '{bash_cmd}' enviado por {sender_name}")
-                
-                try:
-                    import subprocess
-                    proc = subprocess.run(bash_cmd, shell=True, capture_output=True, text=True, timeout=10)
-                    success = proc.returncode == 0
-                    result_msg = proc.stdout if success else proc.stderr
-                    if not result_msg.strip():
-                        result_msg = f"Comando ejecutado con código {proc.returncode}"
-                except Exception as e:
-                    success = False
-                    result_msg = str(e)
-                    
+                logger.warning(f"🚨 ACCESO DENEGADO: Intento de ejecución BASH no autenticada desde {self.peer_ip} ({sender_name}).")
+                result_msg = "ACCESO DENEGADO: La ejecución de comandos shell arbitrarios está deshabilitada por políticas de seguridad de SysNode."
                 self.event_callback({
                     "event": "COMMAND_RECEIVED",
-                    "command": bash_cmd,
+                    "command": "REMOTE_BASH_BLOCKED",
                     "sender_id": sender_id,
                     "sender_name": sender_name,
                     "peer_ip": self.peer_ip,
-                    "success": success,
+                    "success": False,
                     "result": result_msg
                 })
-                
                 send_framed_message(self.client_sock, {
-                    "status": "OK" if success else "ERROR",
-                    "command": bash_cmd,
+                    "status": "ERROR",
+                    "command": "REMOTE_BASH_BLOCKED",
                     "result": result_msg
                 })
 
@@ -266,6 +252,66 @@ class TCPClientHandlerThread(threading.Thread):
                     "msg": result_msg
                 })
 
+            # Caso 4: Terminal Remota (SSH-Style PTY)
+            elif action == ActionType.TERM_INIT:
+                from sysnode.network.terminal_server import terminal_manager
+                cols = payload.get("cols", 80)
+                rows = payload.get("rows", 24)
+                session_id, pin = terminal_manager.create_session(self.client_sock, cols, rows)
+                keep_socket_open = True
+                
+                self.event_callback({
+                    "event": "TERMINAL_PIN_REQUEST",
+                    "session_id": session_id,
+                    "pin": pin,
+                    "sender_name": sender_name,
+                    "peer_ip": self.peer_ip
+                })
+                
+                send_framed_message(self.client_sock, {
+                    "status": "PIN_REQUIRED",
+                    "session_id": session_id,
+                    "msg": f"Ingresá el código PIN desplegado en {self.node_name} para habilitar la terminal."
+                })
+                return
+
+            elif action == ActionType.TERM_AUTH:
+                from sysnode.network.terminal_server import terminal_manager
+                session_id = payload.get("session_id", "")
+                pin = payload.get("pin", "")
+                success = terminal_manager.authenticate_session(session_id, pin)
+                send_framed_message(self.client_sock, {
+                    "status": "OK" if success else "ERROR",
+                    "session_id": session_id,
+                    "msg": "Sesión Terminal autenticada e iniciada." if success else "PIN inválido."
+                })
+                if success:
+                    keep_socket_open = True
+                    return
+
+            elif action == ActionType.TERM_STDIN:
+                from sysnode.network.terminal_server import terminal_manager
+                session_id = payload.get("session_id", "")
+                data = payload.get("data", "")
+                terminal_manager.handle_stdin(session_id, data)
+                keep_socket_open = True
+                return
+
+            elif action == ActionType.TERM_RESIZE:
+                from sysnode.network.terminal_server import terminal_manager
+                session_id = payload.get("session_id", "")
+                cols = payload.get("cols", 80)
+                rows = payload.get("rows", 24)
+                terminal_manager.handle_resize(session_id, cols, rows)
+                keep_socket_open = True
+                return
+
+            elif action == ActionType.TERM_CLOSE:
+                from sysnode.network.terminal_server import terminal_manager
+                session_id = payload.get("session_id", "")
+                terminal_manager.close_session(session_id)
+                return
+
             else:
                 logger.warning(f"Acción TCP no reconocida: {action}")
                 send_framed_message(self.client_sock, {"status": "ERROR", "msg": f"Acción '{action}' no soportada."})
@@ -273,7 +319,8 @@ class TCPClientHandlerThread(threading.Thread):
         except Exception as e:
             logger.error(f"Error procesando solicitud TCP desde {self.peer_ip}: {e}")
         finally:
-            try:
-                self.client_sock.close()
-            except Exception:
-                pass
+            if not keep_socket_open:
+                try:
+                    self.client_sock.close()
+                except Exception:
+                    pass

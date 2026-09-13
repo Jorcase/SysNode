@@ -1,253 +1,179 @@
-import { ActionType } from "./Protocol";
 import TcpSocket from 'react-native-tcp-socket';
-import { Buffer } from 'buffer';
-import * as FileSystem from 'expo-file-system/legacy';
-
-import hmacSHA256 from 'crypto-js/hmac-sha256';
-import hexEnc from 'crypto-js/enc-hex';
-
-const AUTH_TOKEN = "sysnode_secret_123";
+import { createFramedMessage } from './Protocol';
 
 export class TcpClient {
-  /**
-   * Conecta al nodo remoto, envía un mensaje JSON empaquetado con Framing y Firma HMAC,
-   * espera la respuesta ACK del servidor y cierra la conexión.
-   */
-  static sendFramedMessage(ip, port, payload, onResult, onError) {
-    let receiveBuffer = Buffer.alloc(0);
-    let expectedLength = null;
-    let resolved = false;
+  constructor(ip, port) {
+    this.ip = ip;
+    this.port = port;
+    this.client = null;
+    this.isConnected = false;
+  }
 
-    const client = TcpSocket.createConnection({ port, host: ip, timeout: 5000 }, () => {
-      try {
-        const payloadStr = JSON.stringify(payload);
-        const payloadBuf = Buffer.from(payloadStr, 'utf8');
-        
-        const signatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
-        const signatureBuf = Buffer.from(signatureStr, 'utf8'); // 64 bytes
-        
-        const lengthBuf = Buffer.alloc(4);
-        lengthBuf.writeUInt32BE(signatureBuf.length + payloadBuf.length, 0);
-        
-        const finalBuf = Buffer.concat([lengthBuf, signatureBuf, payloadBuf]);
-        client.write(finalBuf);
-      } catch (err) {
-        if (!resolved) {
-          resolved = true;
-          if (onError) onError("Error al serializar el mensaje: " + err.message);
-        }
-        client.destroy();
-      }
+  // Se conecta al nodo destino
+  connect(onConnect, onError, onClose) {
+    if (this.client) {
+      this.client.destroy();
+    }
+
+    this.client = TcpSocket.createConnection({
+      port: this.port,
+      host: this.ip,
+      timeout: 5000,
+    }, () => {
+      this.isConnected = true;
+      if (onConnect) onConnect();
     });
 
-    client.on('data', (data) => {
-      receiveBuffer = Buffer.concat([receiveBuffer, data]);
-
-      if (expectedLength === null && receiveBuffer.length >= 4) {
-        expectedLength = receiveBuffer.readUInt32BE(0);
-        receiveBuffer = receiveBuffer.slice(4);
-      }
-
-      if (expectedLength !== null && receiveBuffer.length >= expectedLength) {
-        const fullPayloadBuf = receiveBuffer.slice(0, expectedLength);
-        
-        if (expectedLength < 64) {
-            if (!resolved) { resolved = true; if (onError) onError("Falta firma HMAC"); }
-            client.destroy();
-            return;
-        }
-        
-        const receivedSignatureStr = fullPayloadBuf.slice(0, 64).toString('utf8');
-        const payloadBuf = fullPayloadBuf.slice(64);
-        const payloadStr = payloadBuf.toString('utf8');
-        
-        const expectedSignatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
-        
-        if (receivedSignatureStr !== expectedSignatureStr) {
-            if (!resolved) { resolved = true; if (onError) onError("Firma HMAC inválida"); }
-            client.destroy();
-            return;
-        }
-
-        try {
-          const response = JSON.parse(payloadStr);
-          if (!resolved) {
-            resolved = true;
-            if (onResult) onResult(response);
-          }
-        } catch (e) {
-          if (!resolved) {
-            resolved = true;
-            if (onError) onError("Error parseando respuesta JSON: " + e.message);
-          }
-        }
-        client.destroy();
-      }
+    this.client.on('error', (error) => {
+      console.log(`[TCP Client] Error conectando a ${this.ip}:${this.port} ->`, error);
+      this.isConnected = false;
+      if (onError) onError(error);
     });
 
-    client.on('error', (error) => {
-      if (!resolved) {
-        resolved = true;
-        if (onError) onError("Error TCP: " + error.message);
-      }
-      client.destroy();
-    });
-    
-    client.on('timeout', () => {
-      if (!resolved) {
-        resolved = true;
-        if (onError) onError("Timeout en la conexión TCP");
-      }
-      client.destroy();
+    this.client.on('close', () => {
+      this.isConnected = false;
+      this.client = null;
+      if (onClose) onClose();
     });
   }
 
-  static sendText(peerIp, peerPort, senderId, senderName, text, onResult, onError) {
-    const payload = {
-      action: ActionType.SHARE_TEXT,
-      sender_id: senderId,
-      sender_name: senderName,
-      payload: text
-    };
-    
-    TcpClient.sendFramedMessage(peerIp, peerPort, payload, 
-      (response) => {
-        if (response.status === "OK") {
-          onResult(true, response.msg || response.result || "Mensaje enviado exitosamente");
-        } else {
-          onResult(false, response.msg || response.result || "Error remoto desconocido");
-        }
-      },
-      (errorMsg) => {
-        if (onError) onError(errorMsg);
+  // Envía un objeto JSON empaquetado con Framing y HMAC
+  sendMessage(payloadObj) {
+    return new Promise((resolve, reject) => {
+      if (!this.isConnected || !this.client) {
+        reject(new Error("No hay conexión TCP activa"));
+        return;
       }
-    );
-  }
 
-  /**
-   * Transmite un archivo binario nativo (por chunks) hacia otro nodo P2P.
-   */
-  static async sendFile(peerIp, peerPort, senderId, senderName, fileUri, filename, filesize, sha256, onProgress, onResult, onError) {
-    let resolved = false;
-
-    const metaPayload = {
-      action: ActionType.FILE_TRANSFER_META,
-      sender_id: senderId,
-      sender_name: senderName,
-      filename: filename,
-      filesize_bytes: filesize,
-      sha256: sha256
-    };
-
-    const client = TcpSocket.createConnection({ port: peerPort, host: peerIp, timeout: 5000 }, () => {
-      // 1. Enviar metadata
       try {
-        const payloadStr = JSON.stringify(metaPayload);
-        const payloadBuf = Buffer.from(payloadStr, 'utf8');
-        
-        const signatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
-        const signatureBuf = Buffer.from(signatureStr, 'utf8');
-        
-        const lengthBuf = Buffer.alloc(4);
-        lengthBuf.writeUInt32BE(signatureBuf.length + payloadBuf.length, 0);
-        client.write(Buffer.concat([lengthBuf, signatureBuf, payloadBuf]));
-      } catch (err) {
-        if (!resolved) { resolved = true; onError("Error enviando metadata: " + err.message); }
-        client.destroy();
-      }
-    });
-
-    let receiveBuffer = Buffer.alloc(0);
-    let expectedLength = null;
-
-    client.on('data', async (data) => {
-      // Leer respuesta ACK READY
-      receiveBuffer = Buffer.concat([receiveBuffer, data]);
-      if (expectedLength === null && receiveBuffer.length >= 4) {
-        expectedLength = receiveBuffer.readUInt32BE(0);
-        receiveBuffer = receiveBuffer.slice(4);
-      }
-
-      if (expectedLength !== null && receiveBuffer.length >= expectedLength) {
-        const fullPayloadBuf = receiveBuffer.slice(0, expectedLength);
-        
-        if (expectedLength < 64) {
-            if (!resolved) { resolved = true; onError("Falta firma HMAC en ACK"); client.destroy(); }
-            return;
-        }
-        
-        const receivedSignatureStr = fullPayloadBuf.slice(0, 64).toString('utf8');
-        const payloadBuf = fullPayloadBuf.slice(64);
-        const payloadStr = payloadBuf.toString('utf8');
-        
-        const expectedSignatureStr = hmacSHA256(payloadStr, AUTH_TOKEN).toString(hexEnc);
-        if (receivedSignatureStr !== expectedSignatureStr) {
-            if (!resolved) { resolved = true; onError("Firma HMAC inválida en ACK"); client.destroy(); }
-            return;
-        }
-
-        try {
-          const response = JSON.parse(payloadStr);
-          if (response.status === "READY") {
-            // El servidor remoto aceptó, comenzar a streamear bytes crudos
-            await TcpClient._streamFileBytes(client, fileUri, filesize, onProgress, onResult, onError, () => {
-              if (!resolved) { resolved = true; }
-            });
+        const framedBuffer = createFramedMessage(payloadObj);
+        this.client.write(framedBuffer, (err) => {
+          if (err) {
+            console.log(`[TCP Client] Error escribiendo en el socket:`, err);
+            reject(err);
           } else {
-            if (!resolved) { resolved = true; onError("Servidor rechazó el archivo: " + response.msg); client.destroy(); }
+            resolve();
           }
-        } catch (e) {
-          if (!resolved) { resolved = true; onError("Error JSON ACK: " + e.message); client.destroy(); }
-        }
-        
-        // Evitamos que vuelva a procesar data si se envían más ACKs
-        expectedLength = null;
-        receiveBuffer = Buffer.alloc(0);
+        });
+      } catch (e) {
+        console.error("[TCP Client] Error al empaquetar el mensaje:", e);
+        reject(e);
       }
-    });
-
-    client.on('error', (error) => {
-      if (!resolved) { resolved = true; onError("Error TCP Archivo: " + error.message); }
-      client.destroy();
-    });
-    
-    client.on('timeout', () => {
-      if (!resolved) { resolved = true; onError("Timeout enviando archivo"); }
-      client.destroy();
     });
   }
 
-  static async _streamFileBytes(client, fileUri, totalSize, onProgress, onResult, onError, resolveCallback) {
-    const CHUNK_SIZE = 16384; // 16KB por ciclo para no congelar la UI de React Native
-    let offset = 0;
-
-    try {
-      while (offset < totalSize) {
-        const lengthToRead = Math.min(CHUNK_SIZE, totalSize - offset);
-        
-        // Leer chunk como Base64 desde el sistema de archivos nativo
-        const base64Chunk = await FileSystem.readAsStringAsync(fileUri, {
-          encoding: FileSystem.EncodingType.Base64,
-          position: offset,
-          length: lengthToRead
-        });
-
-        // Escribir bytes puros en el socket
-        const binChunk = Buffer.from(base64Chunk, 'base64');
-        client.write(binChunk);
-
-        offset += lengthToRead;
-        if (onProgress) onProgress(offset, totalSize);
+  // Envía un mensaje y espera la respuesta JSON del servidor remoto (p.ej. resultados de comandos)
+  sendMessageWithResponse(payloadObj) {
+    return new Promise((resolve, reject) => {
+      if (!this.isConnected || !this.client) {
+        reject(new Error("No hay conexión TCP activa"));
+        return;
       }
-      
-      onResult(true, "Archivo transferido al nodo remoto.");
-      resolveCallback();
-      client.destroy();
-      
-    } catch (e) {
-      onError("Error leyendo o enviando chunks: " + e.message);
-      resolveCallback();
-      client.destroy();
+
+      const { parseFramedMessage } = require('./Protocol');
+      const { Buffer } = require('buffer');
+      let responseBuffer = Buffer.alloc(0);
+
+      const onData = (data) => {
+        responseBuffer = Buffer.concat([responseBuffer, data]);
+        const parsed = parseFramedMessage(responseBuffer);
+        if (parsed && !parsed.error) {
+          if (this.client) this.client.removeListener('data', onData);
+          resolve(parsed.message);
+        }
+      };
+
+      this.client.on('data', onData);
+
+      try {
+        const framedBuffer = createFramedMessage(payloadObj);
+        this.client.write(framedBuffer, (err) => {
+          if (err) {
+            if (this.client) this.client.removeListener('data', onData);
+            reject(err);
+          }
+        });
+      } catch (e) {
+        if (this.client) this.client.removeListener('data', onData);
+        reject(e);
+      }
+    });
+  }
+
+  // Transmite un archivo binario (foto, documento) a un nodo remoto con FILE_TRANSFER_META + streaming
+  sendFile(fileUri, filename, senderId, senderName) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const FileSystem = require('expo-file-system/legacy');
+        const { Buffer } = require('buffer');
+        const { createFramedMessage, parseFramedMessage } = require('./Protocol');
+
+        const CryptoJS = require('crypto-js');
+        const base64Content = await FileSystem.readAsStringAsync(fileUri, {
+          encoding: FileSystem.EncodingType.Base64
+        });
+        const fileBuffer = Buffer.from(base64Content, 'base64');
+        const filesize = fileBuffer.length;
+
+        // Calcular firma de integridad SHA-256 en formato hex
+        const wordArr = CryptoJS.enc.Base64.parse(base64Content);
+        const fileSha256 = CryptoJS.SHA256(wordArr).toString(CryptoJS.enc.Hex);
+
+        this.connect(
+          () => {
+            let responseBuffer = Buffer.alloc(0);
+
+            const onData = (data) => {
+              responseBuffer = Buffer.concat([responseBuffer, data]);
+              const parsed = parseFramedMessage(responseBuffer);
+              if (parsed && !parsed.error) {
+                const payload = parsed.message;
+                if (payload && (payload.status === 'READY' || payload.action === 'FILE_TRANSFER_ACK')) {
+                  if (this.client) this.client.removeListener('data', onData);
+                  // Servidor listo! Enviar el buffer binario
+                  this.client.write(fileBuffer, (err) => {
+                    if (err) {
+                      reject(err);
+                    } else {
+                      resolve({ success: true, filename, filesize, sha256: fileSha256 });
+                    }
+                  });
+                }
+              }
+            };
+
+            this.client.on('data', onData);
+
+            const metaPayload = {
+              action: "FILE_TRANSFER_META",
+              sender_id: senderId,
+              sender_name: senderName,
+              filename: filename,
+              filesize_bytes: filesize,
+              sha256: fileSha256
+            };
+
+            const framedMeta = createFramedMessage(metaPayload);
+            this.client.write(framedMeta, (err) => {
+              if (err) {
+                if (this.client) this.client.removeListener('data', onData);
+                reject(err);
+              }
+            });
+          },
+          (err) => reject(err)
+        );
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  disconnect() {
+    if (this.client) {
+      this.client.destroy();
+      this.client = null;
+      this.isConnected = false;
     }
   }
 }

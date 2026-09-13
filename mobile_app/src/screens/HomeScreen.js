@@ -367,29 +367,53 @@ export default function HomeScreen() {
                 style={{ flex: 1, ...StyleSheet.absoluteFillObject }}
                 facing="back"
                 onBarcodeScanned={({ data }) => {
-                  // Expected format: sysnode://192.168.0.33:50001
-                  if (data.startsWith('sysnode://')) {
-                     setShowQrScanner(false);
-                     const uriData = data.replace('sysnode://', '');
-                     const parts = uriData.split('?')[0].split(':');
-                     const ip = parts[0];
-                     const port = parts.length > 1 && !isNaN(parts[1]) ? parseInt(parts[1]) : 50001;
-                     
-                     if (ip) {
-                       const syntheticId = 'manual_' + Date.now();
-                       setPeers(prev => ({
-                         ...prev,
-                         [syntheticId]: {
-                           node_id: syntheticId,
-                           hostname: `QR_${ip}`,
-                           os: "unknown",
-                           ip: ip,
-                           tcp_port: port,
-                           last_seen: Date.now() + 86400000
-                         }
-                       }));
-                       Alert.alert('Éxito', `Nodo ${ip}:${port} añadido desde QR`);
-                     }
+                  setShowQrScanner(false);
+                  try {
+                    let peerIp, peerPort, peerNodeId, peerName;
+                    if (data.startsWith('sysnode://')) {
+                      const cleanData = data.replace('sysnode://', '');
+                      const parts = cleanData.split('?');
+                      const [ip, port] = parts[0].split(':');
+                      peerIp = ip;
+                      peerPort = parseInt(port, 10) || 50001;
+
+                      if (parts[1]) {
+                        const params = parts[1].split('&');
+                        params.forEach(p => {
+                          const [k, v] = p.split('=');
+                          if (k === 'node_id') peerNodeId = v;
+                          if (k === 'name') peerName = decodeURIComponent(v);
+                        });
+                      }
+                    } else {
+                      const payload = JSON.parse(data);
+                      peerIp = payload.ip;
+                      peerPort = payload.tcp_port || payload.port;
+                      peerNodeId = payload.node_id;
+                      peerName = payload.hostname || payload.name;
+                    }
+
+                    if (peerIp && peerPort) {
+                      const finalId = peerNodeId || `manual-${peerIp}`;
+                      const finalName = peerName || `PC (${peerIp})`;
+
+                      setPeers(prev => ({
+                        ...prev,
+                        [finalId]: {
+                          node_id: finalId,
+                          hostname: finalName,
+                          os: "pc",
+                          ip: peerIp,
+                          tcp_port: peerPort,
+                          last_seen: Date.now() + 86400000
+                        }
+                      }));
+                      Alert.alert('Éxito', `Nodo ${finalName} (${peerIp}:${peerPort}) añadido correctamente.`);
+                    } else {
+                      Alert.alert('QR Inválido', 'El código escaneado no es un nodo SysNode válido.');
+                    }
+                  } catch (e) {
+                    Alert.alert('QR Inválido', 'No se pudo leer la información del código escaneado.');
                   }
                 }}
               />

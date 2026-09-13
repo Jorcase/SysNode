@@ -1,13 +1,20 @@
 import React from 'react';
-import { SafeAreaView, StatusBar, Text, View } from 'react-native';
-import HomeScreen from './src/screens/HomeScreen';
-import { withExpoSnack } from 'nativewind';
+import { StatusBar } from 'react-native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { useColorScheme } from 'nativewind';
+import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   return (
-    <SafeAreaView className="flex-1 bg-[#1a1a1a]">
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
-      <HomeScreen />
-    </SafeAreaView>
+    <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
+      <StatusBar 
+        barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} 
+        backgroundColor={colorScheme === 'dark' ? '#0f1115' : '#ffffff'} 
+      />
+      <AppNavigator />
+    </NavigationContainer>
   );
 }
