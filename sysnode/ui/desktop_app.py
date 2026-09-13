@@ -1271,6 +1271,9 @@ class SysNodeDesktopApp(ctk.CTk):
         if hasattr(self, 'chat_device_icon'):
             self.chat_device_icon.configure(image=header_icon)
             
+        active_peers = self.core.get_active_peers()
+        is_online = node_id in active_peers
+
         if is_mobile:
             self.btn_cmd.grid_remove() # Ocultar Comandos
             if hasattr(self, 'btn_terminal'):
@@ -1279,6 +1282,10 @@ class SysNodeDesktopApp(ctk.CTk):
             self.btn_cmd.grid() # Mostrar Comandos
             if hasattr(self, 'btn_terminal'):
                 self.btn_terminal.grid()
+                if is_online:
+                    self.btn_terminal.configure(state="normal", fg_color="#8E44AD")
+                else:
+                    self.btn_terminal.configure(state="disabled", fg_color="#444444")
                 
         self.load_chat_history(node_id)
 
@@ -1516,7 +1523,12 @@ class SysNodeDesktopApp(ctk.CTk):
             messagebox.showwarning("Sin Selección", "Seleccioná un dispositivo primero.")
             return
 
-        peer_info = self.known_devices.get(self.selected_node_id, {})
+        active_peers = self.core.get_active_peers()
+        if self.selected_node_id not in active_peers:
+            messagebox.showwarning("Dispositivo Inactivo", "El dispositivo seleccionado no se encuentra activo en la red en este momento.")
+            return
+
+        peer_info = active_peers.get(self.selected_node_id, {})
         ip = peer_info.get('ip')
         port = peer_info.get('tcp_port', 50001)
         hostname = peer_info.get('hostname', 'Remoto')
@@ -1525,19 +1537,93 @@ class SysNodeDesktopApp(ctk.CTk):
             messagebox.showerror("Error", "No se encontró la dirección IP del dispositivo seleccionado.")
             return
 
-        # Crear ventana modal de Terminal Remota
+        # Flujo de autenticación preliminar ANTES de desplegar la ventana de terminal
+        def pre_auth_and_connect():
+            import socket
+            from sysnode.network.framing import send_framed_message, receive_framed_message
+
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(10.0)
+                s.connect((ip, port))
+
+                send_framed_message(s, {
+                    "action": "TERM_INIT",
+                    "sender_id": self.core.node_id,
+                    "sender_name": self.core.node_name,
+                    "cols": 80,
+                    "rows": 24
+                })
+
+                resp = receive_framed_message(s)
+                if not resp or resp.get("status") != "PIN_REQUIRED":
+                    try: s.close()
+                    except: pass
+                    self.after(0, lambda: messagebox.showerror("Error de Conexión", f"El nodo remoto {hostname} no aceptó la solicitud de terminal."))
+                    return
+
+                session_id = resp.get("session_id")
+
+                # Solicitar PIN al usuario mediante diálogo emergente en el hilo principal
+                pin_container = {"pin": None, "done": threading.Event()}
+                def ask_pin_gui():
+                    try:
+                        dialog = ctk.CTkInputDialog(
+                            text=f"Ingresá el PIN de 6 dígitos desplegado en la pantalla de {hostname}:",
+                            title="Autorización de Terminal Remota"
+                        )
+                        pin_container["pin"] = dialog.get_input()
+                    except Exception as ex:
+                        logger.error(f"Error dialog PIN: {ex}")
+                    finally:
+                        pin_container["done"].set()
+
+                self.after(0, ask_pin_gui)
+                pin_container["done"].wait(timeout=120.0)
+                pin_code = pin_container["pin"]
+
+                if not pin_code:
+                    try:
+                        send_framed_message(s, {"action": "TERM_CLOSE", "session_id": session_id})
+                        s.close()
+                    except: pass
+                    return
+
+                # Enviar solicitud de autenticación con el PIN
+                send_framed_message(s, {
+                    "action": "TERM_AUTH",
+                    "session_id": session_id,
+                    "pin": pin_code.strip()
+                })
+
+                auth_resp = receive_framed_message(s)
+                if not auth_resp or auth_resp.get("status") != "OK":
+                    try: s.close()
+                    except: pass
+                    err_msg = auth_resp.get("msg", "PIN de autorización inválido o expirado.") if auth_resp else "Sin respuesta del host remoto."
+                    self.after(0, lambda: messagebox.showwarning("Acceso Denegado", f"No se pudo autorizar la terminal remota: {err_msg}"))
+                    return
+
+                # Autenticación aprobada: abrir interfaz de terminal con el socket activo
+                self.after(0, lambda: self.launch_active_terminal_ui(s, session_id, ip, port, hostname))
+
+            except Exception as e:
+                logger.error(f"Error en conexión pre-auth de terminal: {e}")
+                self.after(0, lambda: messagebox.showerror("Error de Conexión", f"No se pudo establecer conexión con {hostname} ({ip}:{port}): {e}"))
+
+        threading.Thread(target=pre_auth_and_connect, daemon=True).start()
+
+    def launch_active_terminal_ui(self, s, session_id, ip, port, hostname):
         term_win = ctk.CTkToplevel(self)
         term_win.title(f"Terminal Remota - {hostname} ({ip}:{port})")
         term_win.geometry("850x520")
         term_win.minsize(600, 350)
         term_win.configure(fg_color="#121212")
 
-        # Header de la ventana
         hdr = ctk.CTkFrame(term_win, fg_color="#1E1E1E", height=40)
         hdr.pack(fill="x", side="top")
         ctk.CTkLabel(hdr, text=f"Terminal Remota PTY | Conectado a {hostname}", font=ctk.CTkFont(size=14, weight="bold"), text_color="#2ECC71").pack(side="left", padx=15, pady=8)
 
-        # Consola de Texto
         term_text = ctk.CTkTextbox(term_win, font=ctk.CTkFont(family="monospace", size=13), fg_color="#0A0A0A", text_color="#00FF66")
         term_text.pack(fill="both", expand=True, padx=10, pady=10)
 
@@ -1545,9 +1631,8 @@ class SysNodeDesktopApp(ctk.CTk):
             term_text.insert("end", msg)
             term_text.see("end")
 
-        print_term(f"[SYSNODE] Estableciendo conexión socket TCP con {hostname} ({ip}:{port})...\n")
+        print_term(f"[SYSNODE] Conexión PTY autenticada con éxito en {hostname} ({ip}:{port})...\n\n")
 
-        # Frame de Entrada de Comandos
         in_frame = ctk.CTkFrame(term_win, fg_color="transparent")
         in_frame.pack(fill="x", padx=10, pady=(0, 10))
 
@@ -1557,7 +1642,7 @@ class SysNodeDesktopApp(ctk.CTk):
         cmd_entry = ctk.CTkEntry(in_frame, font=ctk.CTkFont(family="monospace", size=13), fg_color="#1E1E1E")
         cmd_entry.pack(side="left", fill="x", expand=True, padx=5)
 
-        term_state = {"sock": None, "session_id": None, "active": False}
+        term_state = {"sock": s, "session_id": session_id, "active": True}
 
         def send_term_stdin():
             cmd = cmd_entry.get()
@@ -1594,91 +1679,30 @@ class SysNodeDesktopApp(ctk.CTk):
 
         term_win.protocol("WM_DELETE_WINDOW", close_term_session)
 
-        def start_terminal_thread():
+        def read_terminal_loop():
+            from sysnode.network.framing import receive_framed_message
             import socket
-            from sysnode.network.framing import send_framed_message, receive_framed_message
 
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(5.0)
-                s.connect((ip, port))
-                term_state["sock"] = s
-
-                send_framed_message(s, {
-                    "action": "TERM_INIT",
-                    "sender_id": self.core.node_id,
-                    "sender_name": self.core.node_name,
-                    "cols": 80,
-                    "rows": 24
-                })
-
-                resp = receive_framed_message(s)
-                if not resp or resp.get("status") != "PIN_REQUIRED":
-                    print_term("[ERROR] El nodo remoto no aceptó la solicitud de terminal.\n")
-                    return
-
-                session_id = resp.get("session_id")
-                term_state["session_id"] = session_id
-
-                # Solicitar PIN al usuario mediante diálogo en el hilo principal
-                pin_container = {"pin": None, "done": threading.Event()}
-                def ask_pin_on_main_thread():
-                    try:
-                        dialog = ctk.CTkInputDialog(
-                            text=f"Ingresá el PIN de 6 dígitos generado en la pantalla de {hostname}:",
-                            title="Autorización de Terminal"
-                        )
-                        pin_container["pin"] = dialog.get_input()
-                    except Exception as e:
-                        logger.error(f"Error dialog PIN: {e}")
-                    finally:
-                        pin_container["done"].set()
-
-                self.after(0, ask_pin_on_main_thread)
-                pin_container["done"].wait(timeout=60.0)
-                pin_code = pin_container["pin"]
-
-                if not pin_code:
-                    print_term("[SYSNODE] Solicitud de PIN cancelada por el usuario.\n")
-                    return
-
-                send_framed_message(s, {
-                    "action": "TERM_AUTH",
-                    "session_id": session_id,
-                    "pin": pin_code.strip()
-                })
-
-                auth_resp = receive_framed_message(s)
-                if not auth_resp or auth_resp.get("status") != "OK":
-                    print_term(f"[ERROR] Acceso Denegado: {auth_resp.get('msg', 'PIN inválido')}\n")
-                    return
-
-                term_state["active"] = True
-                print_term(f"[SYSNODE] Conexión PTY autenticada con éxito en {hostname}.\n\n")
-                s.settimeout(1.0)
-
-                while term_state["active"]:
-                    try:
-                        msg = receive_framed_message(s)
-                        if not msg:
-                            break
-                        if msg.get("action") == "TERM_STDOUT" or msg.get("type") == "TERM_STDOUT":
-                            data = msg.get("data", "")
-                            print_term(data)
-                        elif msg.get("action") == "TERM_CLOSE" or msg.get("status") == "CLOSED":
-                            print_term("\n[SYSNODE] La sesión de terminal fue cerrada por el host remoto.\n")
-                            break
-                    except socket.timeout:
-                        continue
-                    except Exception as ex:
-                        if term_state["active"]:
-                            print_term(f"\n[SYSNODE] Desconectado de la terminal: {ex}\n")
+            s.settimeout(1.0)
+            while term_state["active"]:
+                try:
+                    msg = receive_framed_message(s)
+                    if not msg:
                         break
+                    if msg.get("action") == "TERM_STDOUT" or msg.get("type") == "TERM_STDOUT":
+                        data = msg.get("data", "")
+                        print_term(data)
+                    elif msg.get("action") == "TERM_CLOSE" or msg.get("status") == "CLOSED":
+                        print_term("\n[SYSNODE] La sesión de terminal fue cerrada por el host remoto.\n")
+                        break
+                except socket.timeout:
+                    continue
+                except Exception as ex:
+                    if term_state["active"]:
+                        print_term(f"\n[SYSNODE] Desconectado de la terminal: {ex}\n")
+                    break
 
-            except Exception as e:
-                print_term(f"[ERROR] Error de conexión TCP con {ip}:{port} -> {e}\n")
-
-        threading.Thread(target=start_terminal_thread, daemon=True).start()
+        threading.Thread(target=read_terminal_loop, daemon=True).start()
             
     def select_and_send_file(self):
         if not self.selected_node_id:
@@ -1890,12 +1914,88 @@ class SysNodeDesktopApp(ctk.CTk):
         if etype == "TERMINAL_PIN_REQUEST":
             pin = event.get('pin', '------')
             peer_ip = event.get('peer_ip', '')
-            messagebox.showwarning(
-                "Acceso a Terminal Remota Solicitado",
-                f"El equipo '{sender_name}' ({peer_ip}) está intentando abrir una sesión de Terminal Remota en tu PC.\n\n"
-                f"CÓDIGO PIN DE AUTORIZACIÓN:   [   {pin}   ]\n\n"
-                f"Proporcioná este código al operador únicamente si autorizás el acceso."
+            self.show_terminal_pin_modal(sender_name, peer_ip, pin)
+            return
+
+    def show_terminal_pin_modal(self, sender_name, peer_ip, pin):
+        try:
+            modal = ctk.CTkToplevel(self)
+            modal.title("SysNode - Autorización de Terminal Remota")
+            modal.geometry("500x350")
+            modal.resizable(False, False)
+            modal.configure(fg_color="#181818")
+            modal.transient(self)
+            modal.lift()
+            modal.attributes("-topmost", True)
+
+            # Header Frame
+            hdr = ctk.CTkFrame(modal, fg_color="#222222", corner_radius=0, height=50)
+            hdr.pack(fill="x", side="top")
+            
+            lbl_title = ctk.CTkLabel(
+                hdr, 
+                text="Solicitud de Terminal Remota", 
+                font=ctk.CTkFont(size=16, weight="bold"), 
+                text_color="#FFFFFF"
             )
+            lbl_title.pack(side="left", padx=20, pady=12)
+
+            # Content Container
+            content = ctk.CTkFrame(modal, fg_color="transparent")
+            content.pack(fill="both", expand=True, padx=25, pady=15)
+
+            lbl_info = ctk.CTkLabel(
+                content,
+                text=f"El equipo '{sender_name}' ({peer_ip}) solicita acceso a la terminal remota de tu PC.",
+                font=ctk.CTkFont(size=13),
+                text_color="#D1D5DB",
+                wraplength=440,
+                justify="center"
+            )
+            lbl_info.pack(pady=(5, 12))
+
+            # PIN Card Box
+            pin_card = ctk.CTkFrame(content, fg_color="#0F172A", border_color="#1E293B", border_width=1, corner_radius=8)
+            pin_card.pack(fill="x", padx=10, pady=5)
+
+            lbl_pin_tag = ctk.CTkLabel(
+                pin_card,
+                text="CÓDIGO PIN DE AUTORIZACIÓN",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color="#94A3B8"
+            )
+            lbl_pin_tag.pack(pady=(12, 4))
+
+            spaced_pin = "  ".join(list(str(pin)))
+            lbl_pin_val = ctk.CTkLabel(
+                pin_card,
+                text=spaced_pin,
+                font=ctk.CTkFont(family="monospace", size=30, weight="bold"),
+                text_color="#2ECC71"
+            )
+            lbl_pin_val.pack(pady=(0, 12))
+
+            lbl_note = ctk.CTkLabel(
+                content,
+                text="Proporcioná este código únicamente si autorizás el acceso remoto.",
+                font=ctk.CTkFont(size=11),
+                text_color="#9CA3AF",
+                justify="center"
+            )
+            lbl_note.pack(pady=(10, 5))
+
+            btn_ok = ctk.CTkButton(
+                modal,
+                text="Entendido",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color="#27AE60",
+                hover_color="#1E8449",
+                height=38,
+                command=modal.destroy
+            )
+            btn_ok.pack(pady=(0, 20), padx=40, fill="x")
+        except Exception as e:
+            logger.error(f"Error mostrando modal PIN: {e}")
         
         if etype == "TEXT_RECEIVED":
             msg = event.get('text', '')

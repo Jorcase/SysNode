@@ -268,6 +268,7 @@ class TCPClientHandlerThread(threading.Thread):
 
                 # Caso 4: Terminal Remota (SSH-Style PTY)
                 elif action == ActionType.TERM_INIT:
+                    self.client_sock.settimeout(120.0)  # Ampliar timeout a 2 minutos para el flujo de PIN/terminal
                     from sysnode.network.terminal_server import terminal_manager
                     cols = payload.get("cols", 80)
                     rows = payload.get("rows", 24)

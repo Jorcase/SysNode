@@ -231,13 +231,20 @@ class TerminalManager:
         with self.lock:
             session = self.sessions.get(session_id)
             if not session:
+                logger.warning(f"Intento de autenticar sesión PTY inexistente: {session_id}")
                 return False
             
-            if session.pin == pin:
+            clean_rec = str(pin).strip()
+            clean_exp = str(session.pin).strip()
+            
+            if clean_rec == clean_exp:
                 session.authenticated = True
                 success = session.start_shell()
+                logger.info(f"Autenticación PTY EXITOSA para sesión {session_id}")
                 return success
-            return False
+            else:
+                logger.warning(f"PIN PTY incorrecto para sesión {session_id}: Recibido '{clean_rec}', Esperado '{clean_exp}'")
+                return False
 
     def handle_stdin(self, session_id: str, data: str):
         with self.lock:

@@ -94,6 +94,8 @@ def receive_framed_message(sock: socket.socket) -> Optional[Dict[str, Any]]:
         payload = json.loads(raw_json.decode("utf-8"))
         return payload
 
+    except socket.timeout:
+        raise
     except (socket.error, OSError) as e:
         logger.debug(f"Error de socket al recibir trama con framing: {e}")
         return None
