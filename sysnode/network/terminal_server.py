@@ -60,11 +60,17 @@ class PTYSession:
                 self.master_fd = master
                 self.slave_fd = slave
 
-                # Configurar dimensiones iniciales de la PTY
-                self.set_winsize(self.cols, self.rows)
+                # Deshabilitar ECHO en el PTY slave para evitar duplicación de comandos en la GUI
+                try:
+                    attrs = termios.tcgetattr(slave)
+                    attrs[3] = attrs[3] & ~termios.ECHO
+                    termios.tcsetattr(slave, termios.TCSANOW, attrs)
+                except Exception as te:
+                    logger.warning(f"No se pudo deshabilitar ECHO en termios: {te}")
 
                 env = os.environ.copy()
                 env["TERM"] = "xterm-256color"
+                env["PROMPT_COMMAND"] = ""
 
                 self.proc = subprocess.Popen(
                     [shell_cmd],

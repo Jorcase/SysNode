@@ -1619,17 +1619,17 @@ class SysNodeDesktopApp(ctk.CTk):
         def clean_ansi(text: str) -> str:
             if not text:
                 return ""
-            # Strip OSC / systemd VTE tracking sequences (e.g. \x1b]3008;start=... or ]3008;start=...)
-            text = re.sub(r'(\x1b\]|\])[0-9]+;.*?(?:\x07|\x1b\\|\n|$)', '', text)
-            # Strip CSI control escape sequences (\x1b[...m, \x1b[?2004h, \x1b[K, etc.)
-            text = re.sub(r'\x1b\[[0-9;?]*[a-zA-Z]', '', text)
-            # Strip character mode escapes (\x1b(B, \x1b=, etc.)
+            # 1. Remove OSC escape sequences (\x1b]... terminate with \x07, \x1b\\, or \n)
+            text = re.sub(r'\x1b\][0-9]*;[\s\S]*?(?:\x07|\x1b\\|\n|$)', '', text)
+            # 2. Remove standalone systemd/VTE tracking sequences (]3008;... or ]0;...)
+            text = re.sub(r'\][0-9]+;[\s\S]*?(?:\x07|\x1b\\|\n|$)', '', text)
+            # 3. Remove CSI escape sequences (\x1b[... followed by command char like m, h, l, A-Z)
+            text = re.sub(r'\x1b\[[\d;?<=>]*[A-Za-z@-~]', '', text)
+            # 4. Remove simple escapes (\x1b(B, \x1b=, etc.)
             text = re.sub(r'\x1b[\(\)\=\>][A-Za-z0-9]?', '', text)
-            # Remove lone ESC bytes
-            text = text.replace('\x1b', '')
-            # Remove bell / nulls
-            text = text.replace('\x00', '').replace('\x07', '')
-            # Normalize CRLF
+            # 5. Remove lone ESC, NULL, BEL
+            text = text.replace('\x1b', '').replace('\x00', '').replace('\x07', '')
+            # 6. Normalize CR / CRLF
             text = text.replace('\r\n', '\n').replace('\r', '')
             return text
 
@@ -2031,21 +2031,15 @@ class SysNodeDesktopApp(ctk.CTk):
             )
             lbl_pin_tag.pack(pady=(10, 4))
 
-            # Fila horizontal: Números al costado del botón de copiar (misma altura 34)
+            # Contenedor con Grid para números centrados y botón en la izquierda alejado
             pin_row = ctk.CTkFrame(pin_card, fg_color="transparent")
-            pin_row.pack(pady=(0, 10))
+            pin_row.pack(fill="x", padx=15, pady=(0, 10))
 
-            spaced_pin = "  ".join(list(str(pin)))
-            lbl_pin_val = ctk.CTkLabel(
-                pin_row,
-                text=spaced_pin,
-                font=ctk.CTkFont(family="monospace", size=20, weight="bold"),
-                text_color="#2ECC71",
-                height=34
-            )
-            lbl_pin_val.pack(side="left", padx=(0, 12))
+            pin_row.grid_columnconfigure(0, weight=1)
+            pin_row.grid_columnconfigure(1, weight=3)
+            pin_row.grid_columnconfigure(2, weight=1)
 
-            # Botón de copiar SOLO ICONO (mismo alto 34)
+            # Botón de copiar SOLO ICONO a la izquierda alejado (mismo alto 34)
             copy_icon = self.icons.get('copy')
             btn_copy = ctk.CTkButton(
                 pin_row,
@@ -2057,7 +2051,23 @@ class SysNodeDesktopApp(ctk.CTk):
                 hover_color="#383838",
                 corner_radius=6
             )
-            
+            btn_copy.grid(row=0, column=0, sticky="w")
+
+            # Números PIN perfectamente centrados en la columna 1
+            spaced_pin = "  ".join(list(str(pin)))
+            lbl_pin_val = ctk.CTkLabel(
+                pin_row,
+                text=spaced_pin,
+                font=ctk.CTkFont(family="monospace", size=20, weight="bold"),
+                text_color="#2ECC71",
+                height=34
+            )
+            lbl_pin_val.grid(row=0, column=1, sticky="ew")
+
+            # Contrapeso invisible en columna 2 para mantener los números en el centro matemático
+            spacer = ctk.CTkFrame(pin_row, fg_color="transparent", width=34, height=34)
+            spacer.grid(row=0, column=2, sticky="e")
+
             def copy_pin():
                 try:
                     self.clipboard_clear()
@@ -2068,7 +2078,6 @@ class SysNodeDesktopApp(ctk.CTk):
                     logger.error(f"Error copiando PIN: {ex}")
 
             btn_copy.configure(command=copy_pin)
-            btn_copy.pack(side="left")
 
             lbl_note = ctk.CTkLabel(
                 content,
