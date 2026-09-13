@@ -225,10 +225,14 @@ class SysNodeDesktopApp(ctk.CTk):
             self.core.node_name = new_name
             self.core.db.set_local_username(new_name)
             self.core.udp_beacon.hostname = new_name
+            self.core.udp_beacon.custom_name = new_name
             self.title(f"SysNode - {new_name}")
             if hasattr(self, 'entry_username'):
+                prev_state = self.entry_username.cget("state")
+                self.entry_username.configure(state="normal")
                 self.entry_username.delete(0, "end")
                 self.entry_username.insert(0, new_name)
+                self.entry_username.configure(state=prev_state)
         
         is_stealth = (self.login_mode_var.get() == "oculto")
         self.core.udp_beacon.stealth_mode = is_stealth
@@ -807,14 +811,17 @@ class SysNodeDesktopApp(ctk.CTk):
         self.msg_entry.grid(row=1, column=0, padx=10, pady=(5, 10), sticky="ew")
         self.msg_entry.bind("<Return>", lambda e: self.send_text_message())
         
-        self.btn_send = ctk.CTkButton(self.input_frame, text="Enviar", width=80, command=self.send_text_message)
-        self.btn_send.grid(row=1, column=1, padx=(0, 10), pady=(5, 10))
+        self.btn_send = ctk.CTkButton(self.input_frame, text="Enviar", width=70, command=self.send_text_message)
+        self.btn_send.grid(row=1, column=1, padx=(0, 5), pady=(5, 10))
         
-        self.btn_attach = ctk.CTkButton(self.input_frame, image=self.icons.get('file'), text=" Archivo", width=90, fg_color="#34495E", hover_color="#2C3E50", command=self.select_and_send_file)
-        self.btn_attach.grid(row=1, column=2, padx=(0, 10), pady=(5, 10))
+        self.btn_attach = ctk.CTkButton(self.input_frame, image=self.icons.get('file'), text=" Archivo", width=85, fg_color="#34495E", hover_color="#2C3E50", command=self.select_and_send_file)
+        self.btn_attach.grid(row=1, column=2, padx=(0, 5), pady=(5, 10))
         
-        self.btn_cmd = ctk.CTkButton(self.input_frame, image=self.icons.get('terminal'), text=" Comandos", width=90, fg_color="#922B21", hover_color="#7B241C", command=self.open_command_menu)
-        self.btn_cmd.grid(row=1, column=3, padx=(0, 10), pady=(5, 10))
+        self.btn_cmd = ctk.CTkButton(self.input_frame, image=self.icons.get('terminal'), text=" Comandos", width=95, fg_color="#922B21", hover_color="#7B241C", command=self.open_command_menu)
+        self.btn_cmd.grid(row=1, column=3, padx=(0, 5), pady=(5, 10))
+
+        self.btn_terminal = ctk.CTkButton(self.input_frame, image=self.icons.get('terminal'), text=" Terminal Remota", width=125, fg_color="#8E44AD", hover_color="#7D3C98", command=self.open_remote_terminal_window)
+        self.btn_terminal.grid(row=1, column=4, padx=(0, 10), pady=(5, 10))
 
         # Progress bar oculta por defecto
         self.progress_bar = ctk.CTkProgressBar(self.view_chat)
@@ -1257,15 +1264,21 @@ class SysNodeDesktopApp(ctk.CTk):
         info = self.known_devices.get(node_id, {})
         os_type = info.get('os_type', '')
         os_lower = os_type.lower()
-        is_desktop = any(k in os_lower for k in ["desktop", "windows", "linux", "darwin", "mac", "pc"])
+        is_mobile = any(k in os_lower for k in ["android", "ios", "iphone", "ipad", "mobile", "smartphone"])
+        is_desktop = not is_mobile
+        
         header_icon = self.icons.get('laptop') if is_desktop else self.icons.get('smartphone')
         if hasattr(self, 'chat_device_icon'):
             self.chat_device_icon.configure(image=header_icon)
             
-        if 'Android' in os_type or 'iOS' in os_type or 'smartphone' in os_lower:
+        if is_mobile:
             self.btn_cmd.grid_remove() # Ocultar Comandos
+            if hasattr(self, 'btn_terminal'):
+                self.btn_terminal.grid_remove()
         else:
             self.btn_cmd.grid() # Mostrar Comandos
+            if hasattr(self, 'btn_terminal'):
+                self.btn_terminal.grid()
                 
         self.load_chat_history(node_id)
 
@@ -1497,6 +1510,164 @@ class SysNodeDesktopApp(ctk.CTk):
         info = self.known_devices.get(self.selected_node_id, {})
         remote_name = info.get("hostname", "Remoto")
         self.append_to_chat(f"[SysAdmin] Resultado de {remote_name}: {status_icon} {result_msg}")
+
+    def open_remote_terminal_window(self):
+        if not self.selected_node_id:
+            messagebox.showwarning("Sin Selección", "Seleccioná un dispositivo primero.")
+            return
+
+        peer_info = self.known_devices.get(self.selected_node_id, {})
+        ip = peer_info.get('ip')
+        port = peer_info.get('tcp_port', 50001)
+        hostname = peer_info.get('hostname', 'Remoto')
+
+        if not ip:
+            messagebox.showerror("Error", "No se encontró la dirección IP del dispositivo seleccionado.")
+            return
+
+        # Crear ventana modal de Terminal Remota
+        term_win = ctk.CTkToplevel(self)
+        term_win.title(f"Terminal Remota - {hostname} ({ip}:{port})")
+        term_win.geometry("850x520")
+        term_win.minsize(600, 350)
+        term_win.configure(fg_color="#121212")
+
+        # Header de la ventana
+        hdr = ctk.CTkFrame(term_win, fg_color="#1E1E1E", height=40)
+        hdr.pack(fill="x", side="top")
+        ctk.CTkLabel(hdr, text=f"Terminal Remota PTY | Conectado a {hostname}", font=ctk.CTkFont(size=14, weight="bold"), text_color="#2ECC71").pack(side="left", padx=15, pady=8)
+
+        # Consola de Texto
+        term_text = ctk.CTkTextbox(term_win, font=ctk.CTkFont(family="monospace", size=13), fg_color="#0A0A0A", text_color="#00FF66")
+        term_text.pack(fill="both", expand=True, padx=10, pady=10)
+
+        def print_term(msg):
+            term_text.insert("end", msg)
+            term_text.see("end")
+
+        print_term(f"[SYSNODE] Estableciendo conexión socket TCP con {hostname} ({ip}:{port})...\n")
+
+        # Frame de Entrada de Comandos
+        in_frame = ctk.CTkFrame(term_win, fg_color="transparent")
+        in_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        prompt_lbl = ctk.CTkLabel(in_frame, text="bash$ ", font=ctk.CTkFont(family="monospace", size=14, weight="bold"), text_color="#2ECC71")
+        prompt_lbl.pack(side="left", padx=(5, 2))
+
+        cmd_entry = ctk.CTkEntry(in_frame, font=ctk.CTkFont(family="monospace", size=13), fg_color="#1E1E1E")
+        cmd_entry.pack(side="left", fill="x", expand=True, padx=5)
+
+        term_state = {"sock": None, "session_id": None, "active": False}
+
+        def send_term_stdin():
+            cmd = cmd_entry.get()
+            cmd_entry.delete(0, "end")
+            if term_state["sock"] and term_state["active"] and term_state["session_id"]:
+                try:
+                    from sysnode.network.framing import send_framed_message
+                    send_framed_message(term_state["sock"], {
+                        "action": "TERM_STDIN",
+                        "session_id": term_state["session_id"],
+                        "data": cmd + "\n"
+                    })
+                except Exception as e:
+                    print_term(f"\n[ERROR] Fallo al enviar comando: {e}\n")
+
+        cmd_entry.bind("<Return>", lambda e: send_term_stdin())
+        btn_send_cmd = ctk.CTkButton(in_frame, text="Enviar", width=80, fg_color="#27AE60", hover_color="#1E8449", command=send_term_stdin)
+        btn_send_cmd.pack(side="left", padx=5)
+
+        def close_term_session():
+            term_state["active"] = False
+            if term_state["sock"] and term_state["session_id"]:
+                try:
+                    from sysnode.network.framing import send_framed_message
+                    send_framed_message(term_state["sock"], {
+                        "action": "TERM_CLOSE",
+                        "session_id": term_state["session_id"]
+                    })
+                except: pass
+            if term_state["sock"]:
+                try: term_state["sock"].close()
+                except: pass
+            term_win.destroy()
+
+        term_win.protocol("WM_DELETE_WINDOW", close_term_session)
+
+        def start_terminal_thread():
+            import socket
+            from sysnode.network.framing import send_framed_message, recv_framed_message
+
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(5.0)
+                s.connect((ip, port))
+                term_state["sock"] = s
+
+                send_framed_message(s, {
+                    "action": "TERM_INIT",
+                    "sender_id": self.core.node_id,
+                    "sender_name": self.core.node_name,
+                    "cols": 80,
+                    "rows": 24
+                })
+
+                resp = recv_framed_message(s)
+                if not resp or resp.get("status") != "PIN_REQUIRED":
+                    print_term("[ERROR] El nodo remoto no aceptó la solicitud de terminal.\n")
+                    return
+
+                session_id = resp.get("session_id")
+                term_state["session_id"] = session_id
+
+                # Solicitar PIN al usuario mediante diálogo
+                dialog = ctk.CTkInputDialog(
+                    text=f"Ingresá el PIN de 6 dígitos generado en la pantalla de {hostname}:",
+                    title="Autorización de Terminal"
+                )
+                pin_code = dialog.get_input()
+
+                if not pin_code:
+                    print_term("[SYSNODE] Solicitud de PIN cancelada por el usuario.\n")
+                    return
+
+                send_framed_message(s, {
+                    "action": "TERM_AUTH",
+                    "session_id": session_id,
+                    "pin": pin_code.strip()
+                })
+
+                auth_resp = recv_framed_message(s)
+                if not auth_resp or auth_resp.get("status") != "OK":
+                    print_term(f"[ERROR] Acceso Denegado: {auth_resp.get('msg', 'PIN inválido')}\n")
+                    return
+
+                term_state["active"] = True
+                print_term(f"[SYSNODE] Conexión PTY autenticada con éxito en {hostname}.\n\n")
+                s.settimeout(1.0)
+
+                while term_state["active"]:
+                    try:
+                        msg = recv_framed_message(s)
+                        if not msg:
+                            break
+                        if msg.get("type") == "TERM_STDOUT":
+                            data = msg.get("data", "")
+                            print_term(data)
+                        elif msg.get("status") == "CLOSED":
+                            print_term("\n[SYSNODE] La sesión de terminal fue cerrada por el host remoto.\n")
+                            break
+                    except socket.timeout:
+                        continue
+                    except Exception as ex:
+                        if term_state["active"]:
+                            print_term(f"\n[SYSNODE] Desconectado de la terminal: {ex}\n")
+                        break
+
+            except Exception as e:
+                print_term(f"[ERROR] Error de conexión TCP con {ip}:{port} -> {e}\n")
+
+        threading.Thread(target=start_terminal_thread, daemon=True).start()
             
     def select_and_send_file(self):
         if not self.selected_node_id:
@@ -1644,7 +1815,8 @@ class SysNodeDesktopApp(ctk.CTk):
             is_online = node_id in current_peers
             
             os_lower = info.get('os_type', '').lower()
-            is_desktop = any(k in os_lower for k in ["desktop", "windows", "linux", "darwin", "mac", "pc"])
+            is_mobile = any(k in os_lower for k in ["android", "ios", "iphone", "ipad", "mobile", "smartphone"])
+            is_desktop = not is_mobile
             
             # Si es manual y está offline, usar icono de red genérico en vez de móvil
             is_manual = info.get('manual', False) or (node_id.startswith("manual_"))
@@ -1698,11 +1870,21 @@ class SysNodeDesktopApp(ctk.CTk):
     def handle_network_event(self, event):
         etype = event.get('event')
         
-        if etype not in ["TEXT_RECEIVED", "MSG_EDITED", "COMMAND_RECEIVED", "FILE_RECEIVED", "FILE_PROGRESS"]:
+        if etype not in ["TEXT_RECEIVED", "MSG_EDITED", "COMMAND_RECEIVED", "FILE_RECEIVED", "FILE_PROGRESS", "TERMINAL_PIN_REQUEST"]:
             return
             
         sender_id = event.get('sender_id')
         sender_name = event.get('sender_name', 'Desconocido')
+        
+        if etype == "TERMINAL_PIN_REQUEST":
+            pin = event.get('pin', '------')
+            peer_ip = event.get('peer_ip', '')
+            messagebox.showwarning(
+                "Acceso a Terminal Remota Solicitado",
+                f"El equipo '{sender_name}' ({peer_ip}) está intentando abrir una sesión de Terminal Remota en tu PC.\n\n"
+                f"CÓDIGO PIN DE AUTORIZACIÓN:   [   {pin}   ]\n\n"
+                f"Proporcioná este código al operador únicamente si autorizás el acceso."
+            )
         
         if etype == "TEXT_RECEIVED":
             msg = event.get('text', '')
