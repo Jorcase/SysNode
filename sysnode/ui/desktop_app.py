@@ -2264,9 +2264,15 @@ class SysNodeDesktopApp(ctk.CTk):
                 close_modal()
                 if accepted:
                     self.append_to_chat(f"[Sistema] Vinculaste exitosamente el dispositivo {sender_name}.")
+                    
+                    # Update UI state
+                    if sender_id in self.known_devices:
+                        self.known_devices[sender_id]['is_paired'] = 1
+                    else:
+                        self.known_devices[sender_id] = {'is_paired': 1}
+                        
                     # Auto seleccionar el chat si es que no estaba en uno
                     self.on_node_select(sender_id, sender_name)
-                    
             btn_accept = ctk.CTkButton(
                 btn_frame, text="Aceptar", fg_color="#10B981", hover_color="#059669",
                 font=ctk.CTkFont(size=13, weight="bold"),
