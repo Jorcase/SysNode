@@ -2128,8 +2128,9 @@ class SysNodeDesktopApp(ctk.CTk):
             
         if etype == "PAIRING_REQUEST_RECEIVED":
             peer_ip = event.get('peer_ip', '')
+            peer_port = event.get('sender_tcp_port', 50001)
             trust_token = event.get('trust_token', '')
-            self.show_pairing_request_modal(sender_id, sender_name, peer_ip, trust_token)
+            self.show_pairing_request_modal(sender_id, sender_name, peer_ip, peer_port, trust_token)
             return
 
         if etype == "PAIRING_RESPONSE_RECEIVED":
@@ -2214,7 +2215,7 @@ class SysNodeDesktopApp(ctk.CTk):
                 if current >= total:
                     self.after(2000, lambda: self.progress_bar.grid_forget())
 
-    def show_pairing_request_modal(self, sender_id, sender_name, peer_ip, trust_token):
+    def show_pairing_request_modal(self, sender_id, sender_name, peer_ip, peer_port, trust_token):
         try:
             if hasattr(self, '_active_pairing_modal') and self._active_pairing_modal is not None:
                 try:
@@ -2260,7 +2261,7 @@ class SysNodeDesktopApp(ctk.CTk):
             btn_frame.pack(fill="x")
 
             def respond(accepted):
-                self.core.respond_pairing(sender_id, accepted, trust_token)
+                self.core.respond_pairing(sender_id, sender_name, peer_ip, peer_port, accepted, trust_token)
                 close_modal()
                 if accepted:
                     self.append_to_chat(f"[Sistema] Vinculaste exitosamente el dispositivo {sender_name}.")

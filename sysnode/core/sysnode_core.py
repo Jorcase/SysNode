@@ -485,16 +485,9 @@ class SysNodeCore:
             return True
         return False
 
-    def respond_pairing(self, node_id: str, accepted: bool, peer_token: str) -> Tuple[bool, str]:
-        """Responde a una solicitud de vinculación."""
-        peers = self.get_active_peers()
-        if node_id not in peers:
-            return False, "Nodo no encontrado."
-        
+    def respond_pairing(self, node_id: str, node_name: str, peer_ip: str, peer_port: int, accepted: bool, peer_token: str) -> Tuple[bool, str]:
+        """Responde a una solicitud de vinculación usando IP y puerto directos."""
         sender_id = node_id
-        peer = peers[node_id]
-        peer_ip = peer["ip"]
-        peer_port = peer["tcp_port"]
         
         from sysnode.network.tcp_client import TCPClient
         
