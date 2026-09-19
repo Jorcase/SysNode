@@ -2114,7 +2114,7 @@ class SysNodeDesktopApp(ctk.CTk):
     def handle_network_event(self, event):
         etype = event.get('event')
         
-        if etype not in ["TEXT_RECEIVED", "MSG_EDITED", "COMMAND_RECEIVED", "FILE_RECEIVED", "FILE_PROGRESS", "TERMINAL_PIN_REQUEST", "PAIRING_REQUEST_RECEIVED"]:
+        if etype not in ["TEXT_RECEIVED", "MSG_EDITED", "COMMAND_RECEIVED", "FILE_RECEIVED", "FILE_PROGRESS", "TERMINAL_PIN_REQUEST", "PAIRING_REQUEST_RECEIVED", "PAIRING_RESPONSE_RECEIVED", "UNPAIR_REQUEST_RECEIVED"]:
             return
             
         sender_id = event.get('sender_id')
