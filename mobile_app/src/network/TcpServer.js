@@ -21,71 +21,63 @@ export class TcpServer {
       let isReceivingFile = false;
       let fileMeta = null;
       let bytesReceived = 0;
-      let fileBuffer = Buffer.alloc(0); // Para guardar chunks en memoria antes de pasarlos a Base64
+      let tempFilePath = null;
+      let fileWritePromise = Promise.resolve();
+      const RNFS = require('react-native-fs');
 
       socket.on('data', async (data) => {
         receiveBuffer = Buffer.concat([receiveBuffer, data]);
 
         if (isReceivingFile) {
-          // Leer bytes crudos
-          bytesReceived += data.length;
-          fileBuffer = Buffer.concat([fileBuffer, data]);
+          const bytesNeeded = fileMeta.filesize_bytes - bytesReceived;
+          const bytesToExtract = Math.min(bytesNeeded, receiveBuffer.length);
+          const fileData = receiveBuffer.slice(0, bytesToExtract);
           
-          // Escribir a disco cada 64KB para no llenar la RAM (o al final si es chico)
-          if (fileBuffer.length >= 65536 || bytesReceived >= fileMeta.filesize_bytes) {
-            const base64Chunk = fileBuffer.toString('base64');
-            fileBuffer = Buffer.alloc(0);
-            
+          bytesReceived += fileData.length;
+          receiveBuffer = receiveBuffer.slice(bytesToExtract);
+          
+          const currentMeta = fileMeta;
+          const currentTempPath = tempFilePath;
+          const isLastChunk = (bytesReceived >= fileMeta.filesize_bytes);
+          
+          fileWritePromise = fileWritePromise.then(async () => {
             try {
-              // Import dinámico para no romper si no está listo
-              const FileSystem = require('expo-file-system/legacy');
-              
-              // Escribir/append
-              const fileUri = fileMeta.dest_uri;
-              const fileExists = await FileSystem.getInfoAsync(fileUri);
-              if (fileExists.exists) {
-                // Como no hay appendAsStringAsync nativo fácil en expo sin plugins, 
-                // para mantenerlo simple y nativo, leemos y reescribimos si es necesario 
-                // O mejor, usamos expo-file-system EncodingType.Base64 para append si existiera.
-                // Como expo-file-system writeAsStringAsync SOBREESCRIBE, 
-                // guardar todo en memoria o usar Storage Access Framework.
-                // Para este MVP, por limitaciones de Expo FileSystem sin append,
-                // guardamos en RAM hasta max 50MB y escribimos al final.
+              if (fileData.length > 0) {
+                await RNFS.appendFile(currentTempPath, fileData.toString('base64'), 'base64');
               }
-            } catch(e) {}
-          }
-          
-          if (bytesReceived >= fileMeta.filesize_bytes) {
-            // Terminó de recibir!
-            try {
-              const FileSystem = require('expo-file-system/legacy');
-              const destDir = FileSystem.documentDirectory + 'SysNode_Received/';
-              await FileSystem.makeDirectoryAsync(destDir, { intermediates: true }).catch(()=>{});
-              const fileUri = destDir + fileMeta.filename;
               
-              await FileSystem.writeAsStringAsync(fileUri, receiveBuffer.slice(0, fileMeta.filesize_bytes).toString('base64'), {
-                encoding: FileSystem.EncodingType.Base64
-              });
+              if (isLastChunk) {
+                const destDir = RNFS.DocumentDirectoryPath + '/SysNode_Received';
+                await RNFS.mkdir(destDir);
+                const finalPath = destDir + '/' + currentMeta.filename;
+                
+                if (await RNFS.exists(finalPath)) {
+                  await RNFS.unlink(finalPath);
+                }
+                await RNFS.moveFile(currentTempPath, finalPath);
 
-              if (this.onMessageReceived) {
-                this.onMessageReceived({
-                  type: "FILE",
-                  sender: fileMeta.sender_name,
-                  text: `Archivo recibido: ${fileMeta.filename}`,
-                  uri: fileUri
-                });
+                if (this.onMessageReceived) {
+                  this.onMessageReceived({
+                    type: "FILE",
+                    sender: currentMeta.sender_name,
+                    text: `Archivo recibido: ${currentMeta.filename}`,
+                    uri: 'file://' + finalPath
+                  });
+                }
               }
-            } catch (e) {
-              console.error("[TCP Server] Error guardando archivo:", e);
+            } catch(e) {
+              console.error("[TCP Server] Error escribiendo chunk:", e);
             }
-            
+          });
+          
+          if (isLastChunk) {
             isReceivingFile = false;
-            receiveBuffer = receiveBuffer.slice(fileMeta.filesize_bytes); // Lo que sobra
             fileMeta = null;
             bytesReceived = 0;
-            fileBuffer = Buffer.alloc(0);
+            tempFilePath = null;
           }
-          return;
+          
+          if (receiveBuffer.length === 0) return;
         }
 
         // Modo Framing (Mensajes JSON)
@@ -107,14 +99,16 @@ export class TcpServer {
             isReceivingFile = true;
             fileMeta = payload;
             bytesReceived = 0;
-            fileBuffer = Buffer.alloc(0);
+            tempFilePath = RNFS.CachesDirectoryPath + '/temp_receive_' + Date.now() + '.tmp';
+            // Crear el archivo vacio para asegurarnos que appendFile no falle si es la primera vez
+            await RNFS.writeFile(tempFilePath, '', 'utf8');
             console.log(`[TCP Server] Preparando recepción de archivo: ${fileMeta.filename || 'unknown'} (${fileMeta.filesize_bytes || 0} bytes)`);
             this.handleIncomingMessage(socket, payload, () => {});
             continue; // Esperar los bytes crudos
           }
 
           // Si es un mensaje de texto normal u otro comando
-          this.handleIncomingMessage(socket, payload, null);
+          await this.handleIncomingMessage(socket, payload, null);
         }
       });
 
@@ -134,15 +128,66 @@ export class TcpServer {
     });
   }
 
-  handleIncomingMessage(socket, payload, onFileMetaReady) {
+  async handleIncomingMessage(socket, payload, onFileMetaReady) {
     const action = payload.action;
+    const senderId = payload.sender_id || "unknown";
+    const senderName = payload.sender_name || "Unknown";
+    const { MessageStorage } = require('./MessageStorage');
 
-    if (action === "SHARE_TEXT") {
+    if (action !== "PING_NODE" && action !== "PAIRING_REQ" && action !== "PAIRING_RESP") {
+      const trustToken = payload.trust_token || "";
+      const isTrusted = await MessageStorage.verifyDeviceTrust(senderId, trustToken);
+      if (!isTrusted) {
+        console.warn(`[TCP Server] 🚨 ACCESO DENEGADO: Intento de acción '${action}' desde nodo no emparejado ${senderName} (${senderId}).`);
+        this._sendAck(socket, { status: "ERROR", msg: "NOT_PAIRED" });
+        return;
+      }
+    }
+
+    if (action === "PAIRING_REQ") {
+      if (this.onMessageReceived) {
+        this.onMessageReceived({
+          type: "PAIRING_REQ",
+          sender: senderName,
+          sender_id: senderId,
+          peer_ip: socket.remoteAddress,
+          trust_token: payload.trust_token || "",
+          ...payload
+        });
+      }
+      this._sendAck(socket, { status: "OK", msg: "Pairing request received." });
+    }
+    else if (action === "PAIRING_RESP") {
+      const accepted = payload.accepted || false;
+      const trustToken = payload.trust_token || "";
+      
+      if (accepted && trustToken) {
+        await MessageStorage.setDevicePaired(senderId, true, trustToken);
+        console.log(`[TCP Server] Dispositivo ${senderId} aceptó la vinculación.`);
+      } else {
+        await MessageStorage.setDevicePaired(senderId, false, null);
+        console.log(`[TCP Server] Dispositivo ${senderId} rechazó la vinculación.`);
+      }
+      
+      if (this.onMessageReceived) {
+        this.onMessageReceived({
+          type: "PAIRING_RESP",
+          sender: senderName,
+          sender_id: senderId,
+          peer_ip: socket.remoteAddress,
+          accepted: accepted,
+          ...payload
+        });
+      }
+      this._sendAck(socket, { status: "OK", msg: "Pairing response acknowledged." });
+    }
+    else if (action === "SHARE_TEXT") {
       if (this.onMessageReceived) {
         this.onMessageReceived({
           type: "TEXT",
-          sender: payload.sender_name || "Unknown",
+          sender: senderName,
           text: payload.payload,
+          peer_ip: socket.remoteAddress,
           ...payload
         });
       }

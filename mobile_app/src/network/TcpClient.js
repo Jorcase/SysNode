@@ -46,6 +46,9 @@ export class TcpClient {
       }
 
       try {
+        if (global.myTcpPort && typeof payloadObj === 'object') {
+          payloadObj.sender_tcp_port = global.myTcpPort;
+        }
         const framedBuffer = createFramedMessage(payloadObj);
         this.client.write(framedBuffer, (err) => {
           if (err) {
@@ -86,6 +89,9 @@ export class TcpClient {
       this.client.on('data', onData);
 
       try {
+        if (global.myTcpPort && typeof payloadObj === 'object') {
+          payloadObj.sender_tcp_port = global.myTcpPort;
+        }
         const framedBuffer = createFramedMessage(payloadObj);
         this.client.write(framedBuffer, (err) => {
           if (err) {

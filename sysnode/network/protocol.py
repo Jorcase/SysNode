@@ -17,6 +17,8 @@ class ActionType(str, Enum):
     TERM_STDOUT = "TERM_STDOUT"
     TERM_RESIZE = "TERM_RESIZE"
     TERM_CLOSE = "TERM_CLOSE"
+    PAIRING_REQ = "PAIRING_REQ"
+    PAIRING_RESP = "PAIRING_RESP"
     
 class PeerRole(str, Enum):
     SENDER = "SENDER"

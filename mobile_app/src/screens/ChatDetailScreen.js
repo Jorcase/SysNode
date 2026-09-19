@@ -1,19 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, TextInput, FlatList, Modal, DeviceEventEmitter } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import ChatBubble from '../components/ChatBubble';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
-import * as Clipboard from 'expo-clipboard';
-import { TcpClient } from '../network/TcpClient';
-import { useMyIdentity } from '../network/MyIdentity';
-import { MessageStorage } from '../network/MessageStorage';
-import { CommandStorage } from '../network/CommandStorage';
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, TextInput, FlatList, Modal, DeviceEventEmitter, BackHandler } from 'react-native';
+import { View, Text, Image, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, TextInput, FlatList, Modal, DeviceEventEmitter, BackHandler } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +24,7 @@ export default function ChatDetailScreen() {
   const [showCommandsModal, setShowCommandsModal] = useState(false);
   const [showDeviceInfoModal, setShowDeviceInfoModal] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [selectedMsgForOptions, setSelectedMsgForOptions] = useState(null);
   const [showMediaViewerModal, setShowMediaViewerModal] = useState(false);
   const [selectedMediaUri, setSelectedMediaUri] = useState(null);
   
@@ -61,33 +48,51 @@ export default function ChatDetailScreen() {
     return () => backHandler.remove();
   }, [navigation]);
 
-  const scrollToBottom = useCallback(() => {
-    setTimeout(() => {
-      if (flatListRef.current) {
-        flatListRef.current.scrollToEnd({ animated: true });
-      }
-    }, 100);
-  }, []);
+  const userHasScrolledRef = useRef(false);
+  const PAGE_SIZE = 30;
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadedOffset, setLoadedOffset] = useState(0);
+  const isLoadingMoreRef = useRef(false);
+
+  // Se elimina scrollToBottom por uso de FlatList invertido
 
   useEffect(() => {
+    userHasScrolledRef.current = false;
+    isLoadingMoreRef.current = false;
     const targetNodeId = node.id || 'pc_desktop_node';
 
-    // 1. Cargar historial guardado
-    MessageStorage.getMessages(targetNodeId).then(history => {
-      setMessages(history);
-      scrollToBottom();
+    // 1. Cargar únicamente los últimos 30 mensajes para evitar saturación
+    MessageStorage.getMessagesPaged(targetNodeId, PAGE_SIZE, 0).then(res => {
+      setMessages(res.messages);
+      setHasMoreHistory(res.hasMore);
+      setLoadedOffset(res.loadedOffset);
     });
 
-    // 2. Escuchar mensajes entrantes y eventos de edición
+    // 2. Escuchar mensajes entrantes (Texto, Archivos/Imágenes y Ediciones)
     const subMsg = DeviceEventEmitter.addListener('onChatMessageReceived', (payload) => {
-      if (payload.action === 'SHARE_TEXT' || payload.type === 'TEXT') {
+      if (payload.action === 'EDIT_MSG' || payload.type === 'MSG_EDITED') {
+        const msgUuid = payload.msg_uuid;
+        const newText = payload.new_text || payload.payload;
+        if (msgUuid && newText) {
+          setMessages(prev => prev.map(m => m.id === msgUuid ? { ...m, text: newText, isEdited: true } : m));
+          MessageStorage.updateMessageText(targetNodeId, msgUuid, newText);
+        }
+        return;
+      }
+
+      if (payload.action === 'SHARE_TEXT' || payload.type === 'TEXT' || payload.type === 'FILE' || payload.uri || payload.imageUri || payload.fileUri) {
         const incomingSenderId = payload.senderId || payload.sender_id || targetNodeId;
-        const text = payload.payload || payload.text;
-        const msgId = payload.msg_uuid || Date.now().toString();
+        const text = payload.payload || payload.text || '';
+        const msgId = payload.msg_uuid || payload.id || Date.now().toString();
         
+        const uri = payload.uri || payload.imageUri || payload.fileUri;
+        const isImage = uri ? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].some(ext => uri.toLowerCase().endsWith('.' + ext)) : false;
+
         const newMsg = payload.message || {
           id: msgId,
           text: text,
+          imageUri: isImage ? uri : (payload.imageUri || null),
+          fileUri: (!isImage && uri) ? uri : (payload.fileUri || null),
           time: new Date().toLocaleTimeString().slice(0, 5),
           timestamp: Date.now(),
           isMe: false,
@@ -99,22 +104,41 @@ export default function ChatDetailScreen() {
         if (incomingSenderId === targetNodeId || targetNodeId === 'pc_desktop_node') {
           setMessages(prev => {
             if (prev.some(m => m.id === newMsg.id)) return prev;
-            return [...prev, newMsg];
+            return [newMsg, ...prev]; // Invertido: nuevo va al inicio
           });
-          scrollToBottom();
         }
       }
     });
 
     const subEdit = DeviceEventEmitter.addListener('MSG_EDITED', (evt) => {
       setMessages(prev => prev.map(m => m.id === evt.msg_uuid ? { ...m, text: evt.new_text, isEdited: true } : m));
+      MessageStorage.updateMessageText(targetNodeId, evt.msg_uuid, evt.new_text);
     });
 
     return () => {
       subMsg.remove();
       subEdit.remove();
     };
-  }, [node.id, scrollToBottom]);
+  }, [node.id]);
+
+  const loadMoreHistory = useCallback(() => {
+    if (!hasMoreHistory || isLoadingMoreRef.current) return;
+    isLoadingMoreRef.current = true;
+    const targetNodeId = node.id || 'pc_desktop_node';
+
+    MessageStorage.getMessagesPaged(targetNodeId, PAGE_SIZE, loadedOffset).then(res => {
+      if (res.messages && res.messages.length > 0) {
+        setMessages(prev => [...prev, ...res.messages]); // Los viejos van al final
+        setHasMoreHistory(res.hasMore);
+        setLoadedOffset(res.loadedOffset);
+      } else {
+        setHasMoreHistory(false);
+      }
+      isLoadingMoreRef.current = false;
+    }).catch(() => {
+      isLoadingMoreRef.current = false;
+    });
+  }, [hasMoreHistory, loadedOffset, node.id]);
 
   const handleSend = () => {
     if (!messageText.trim()) return;
@@ -128,6 +152,7 @@ export default function ChatDetailScreen() {
       setMessageText('');
 
       setMessages(prev => prev.map(m => m.id === targetMsgId ? { ...m, text: updatedText, isEdited: true } : m));
+      MessageStorage.updateMessageText(targetNodeId, targetMsgId, updatedText);
 
       if (!clientRef.current) {
         clientRef.current = new TcpClient(node.ip, node.tcp_port);
@@ -157,9 +182,8 @@ export default function ChatDetailScreen() {
       status: 'sending'
     };
     
-    setMessages(prev => [...prev, newMsg]);
+    setMessages(prev => [newMsg, ...prev]); // Invertido: nuevo va al inicio
     MessageStorage.saveMessage(targetNodeId, newMsg);
-    scrollToBottom();
     
     const textToSend = messageText;
     setMessageText('');
@@ -211,9 +235,8 @@ export default function ChatDetailScreen() {
       status: 'sending'
     };
 
-    setMessages(prev => [...prev, newMsg]);
+    setMessages(prev => [newMsg, ...prev]); // Invertido
     MessageStorage.saveMessage(targetNodeId, newMsg);
-    scrollToBottom();
 
     if (!clientRef.current) {
       clientRef.current = new TcpClient(node.ip, node.tcp_port);
@@ -231,56 +254,7 @@ export default function ChatDetailScreen() {
   };
 
   const handleMessageLongPress = (msg) => {
-    const targetNodeId = node.id || 'pc_desktop_node';
-    const isWithin15Min = msg.timestamp && (Date.now() - msg.timestamp <= 15 * 60 * 1000);
-
-    const options = [
-      { text: "Cancelar", style: "cancel" },
-      { 
-        text: "Copiar Texto", 
-        onPress: async () => {
-          await Clipboard.setStringAsync(msg.text);
-          Alert.alert("Copiado", "Texto copiado al portapapeles.");
-        } 
-      }
-    ];
-
-    if (msg.isMe && isWithin15Min && !msg.imageUri && !msg.fileUri) {
-      options.push({
-        text: "Editar Mensaje",
-        onPress: () => {
-          setEditingMsgId(msg.id);
-          setMessageText(msg.text);
-        }
-      });
-    }
-
-    if (isWithin15Min) {
-      options.push({
-        text: "Eliminar Mensaje",
-        style: "destructive",
-        onPress: async () => {
-          setMessages(prev => {
-            const updated = prev.filter(m => m.id !== msg.id);
-            MessageStorage.clearMessages(targetNodeId).then(() => {
-              updated.forEach(m => MessageStorage.saveMessage(targetNodeId, m));
-            });
-            return updated;
-          });
-        }
-      });
-    } else {
-      options.push({
-        text: "El plazo de 15 min para editar/borrar ha expirado",
-        style: "cancel"
-      });
-    }
-
-    Alert.alert(
-      "Opciones de Mensaje",
-      msg.text ? (msg.text.length > 40 ? msg.text.substring(0, 40) + "..." : msg.text) : "Mensaje adjunto",
-      options
-    );
+    setSelectedMsgForOptions(msg);
   };
 
   const handleOptionsPress = () => {
@@ -289,37 +263,64 @@ export default function ChatDetailScreen() {
 
   const handleTakePhoto = async () => {
     setShowAttachMenu(false);
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permiso Denegado', 'Necesitamos acceso a la cámara para tomar fotos.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const asset = result.assets[0];
-      const filename = asset.fileName || `foto_${Date.now()}.jpg`;
-      sendFileMessage(asset.uri, filename, "Cámara");
-    }
+    setTimeout(async () => {
+      try {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permiso Denegado', 'Necesitamos acceso a la cámara para tomar fotos.');
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.7,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          const filename = asset.fileName || `foto_${Date.now()}.jpg`;
+          sendFileMessage(asset.uri, filename, "Cámara");
+        }
+      } catch (err) {
+        console.error('Error al tomar foto:', err);
+        Alert.alert('Error Cámara', 'No se pudo abrir la cámara: ' + (err.message || ''));
+      }
+    }, 150);
   };
 
   const handlePickGallery = async () => {
     setShowAttachMenu(false);
-    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const asset = result.assets[0];
-      const filename = asset.fileName || `imagen_${Date.now()}.jpg`;
-      sendFileMessage(asset.uri, filename, "Galería");
-    }
+    setTimeout(async () => {
+      try {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.All,
+          quality: 0.7,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          const isVideo = asset.type === 'video';
+          const ext = isVideo ? 'mp4' : 'jpg';
+          const filename = asset.fileName || `media_${Date.now()}.${ext}`;
+          sendFileMessage(asset.uri, filename, "Galería");
+        }
+      } catch (err) {
+        console.error('Error al seleccionar de galería:', err);
+      }
+    }, 150);
   };
 
   const handlePickDocument = async () => {
     setShowAttachMenu(false);
-    const result = await DocumentPicker.getDocumentAsync({});
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const asset = result.assets[0];
-      const filename = asset.name || `doc_${Date.now()}`;
-      sendFileMessage(asset.uri, filename, "Documento");
-    }
+    setTimeout(async () => {
+      try {
+        const result = await DocumentPicker.getDocumentAsync({});
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          const filename = asset.name || `doc_${Date.now()}`;
+          sendFileMessage(asset.uri, filename, "Documento");
+        }
+      } catch (err) {
+        console.error('Error al seleccionar documento:', err);
+      }
+    }, 150);
   };
 
   const handleOpenCommands = async () => {
@@ -457,10 +458,19 @@ export default function ChatDetailScreen() {
         <FlatList 
           ref={flatListRef}
           data={messages}
+          inverted={true}
           keyExtractor={item => item.id}
           className="flex-1 bg-gray-50 dark:bg-[#0b0c10]"
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 12 }}
-          onContentSizeChange={() => scrollToBottom()}
+          onEndReached={loadMoreHistory}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={hasMoreHistory ? (
+            <View className="py-4">
+              <Text className="text-xs text-blue-500 font-semibold text-center">
+                Cargando...
+              </Text>
+            </View>
+          ) : null}
           renderItem={({ item }) => (
             <ChatBubble 
               message={item} 
@@ -496,6 +506,75 @@ export default function ChatDetailScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Modal Opciones de Mensaje (Reemplazo de Alert.alert para evitar límite de Android) */}
+      <Modal visible={!!selectedMsgForOptions} transparent animationType="fade">
+        <TouchableOpacity 
+          className="flex-1 bg-black/40 justify-center items-center" 
+          activeOpacity={1} 
+          onPress={() => setSelectedMsgForOptions(null)}
+        >
+          <View className="bg-white dark:bg-[#1e2128] rounded-xl w-4/5 overflow-hidden">
+            <View className="p-4 border-b border-gray-100 dark:border-gray-800">
+              <Text className="text-center font-bold text-gray-800 dark:text-gray-200" numberOfLines={1}>
+                {selectedMsgForOptions?.text ? selectedMsgForOptions.text : "Mensaje adjunto"}
+              </Text>
+            </View>
+            
+            {selectedMsgForOptions?.text && (
+              <TouchableOpacity 
+                className="py-4 border-b border-gray-100 dark:border-gray-800 flex-row items-center justify-center"
+                onPress={async () => {
+                  await Clipboard.setStringAsync(selectedMsgForOptions.text);
+                  Alert.alert("Copiado", "Texto copiado al portapapeles.");
+                  setSelectedMsgForOptions(null);
+                }}
+              >
+                <Ionicons name="copy-outline" size={20} color="#3b82f6" />
+                <Text className="ml-3 font-semibold text-blue-500">Copiar Texto</Text>
+              </TouchableOpacity>
+            )}
+
+            {selectedMsgForOptions?.isMe && 
+             (!selectedMsgForOptions.timestamp || Date.now() - selectedMsgForOptions.timestamp <= 30 * 60 * 1000) && 
+             !selectedMsgForOptions.imageUri && 
+             !selectedMsgForOptions.fileUri && (
+              <TouchableOpacity 
+                className="py-4 border-b border-gray-100 dark:border-gray-800 flex-row items-center justify-center"
+                onPress={() => {
+                  setEditingMsgId(selectedMsgForOptions.id);
+                  setMessageText(selectedMsgForOptions.text);
+                  setSelectedMsgForOptions(null);
+                }}
+              >
+                <Ionicons name="pencil-outline" size={20} color="#3b82f6" />
+                <Text className="ml-3 font-semibold text-blue-500">Editar Mensaje</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity 
+              className="py-4 border-b border-gray-100 dark:border-gray-800 flex-row items-center justify-center"
+              onPress={async () => {
+                const targetNodeId = node.id || 'pc_desktop_node';
+                const msgId = selectedMsgForOptions.id;
+                setMessages(prev => prev.filter(m => m.id !== msgId));
+                await MessageStorage.deleteMessage(targetNodeId, msgId);
+                setSelectedMsgForOptions(null);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              <Text className="ml-3 font-semibold text-red-500">Eliminar Mensaje</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              className="py-4 bg-gray-50 dark:bg-[#1a1d24] flex-row items-center justify-center"
+              onPress={() => setSelectedMsgForOptions(null)}
+            >
+              <Text className="font-semibold text-gray-500 dark:text-gray-400">Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Menú de Adjuntos (Botón +) */}
       <Modal visible={showAttachMenu} transparent animationType="fade">
@@ -676,7 +755,7 @@ export default function ChatDetailScreen() {
             <TouchableOpacity 
               onPress={() => {
                 setShowDeviceInfoModal(false);
-                navigation.navigate('Settings');
+                navigation.navigate('MainTabs', { screen: 'Settings' });
               }}
               className="py-2.5 bg-blue-600 rounded-md items-center mb-2"
             >

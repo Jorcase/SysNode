@@ -53,6 +53,13 @@ class SysNodeDatabase:
                     cursor.execute("ALTER TABLE devices ADD COLUMN last_port INTEGER")
                 except sqlite3.OperationalError:
                     pass
+
+                # Add is_paired and trust_token
+                try:
+                    cursor.execute("ALTER TABLE devices ADD COLUMN is_paired INTEGER DEFAULT 0")
+                    cursor.execute("ALTER TABLE devices ADD COLUMN trust_token TEXT")
+                except sqlite3.OperationalError:
+                    pass
                 
                 # Tabla de mensajes asociados a un dispositivo
                 cursor.execute('''
@@ -212,11 +219,51 @@ class SysNodeDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             try:
-                cursor.execute("SELECT node_id, hostname, os_type, last_ip, last_port FROM devices")
+                cursor.execute("SELECT node_id, hostname, os_type, last_ip, last_port, is_paired FROM devices")
                 return cursor.fetchall()
             except sqlite3.OperationalError:
-                cursor.execute("SELECT node_id, hostname, os_type FROM devices")
-                return [(r[0], r[1], r[2], None, None) for r in cursor.fetchall()]
+                try:
+                    cursor.execute("SELECT node_id, hostname, os_type, last_ip, last_port FROM devices")
+                    return [(r[0], r[1], r[2], r[3], r[4], 0) for r in cursor.fetchall()]
+                except sqlite3.OperationalError:
+                    cursor.execute("SELECT node_id, hostname, os_type FROM devices")
+                    return [(r[0], r[1], r[2], None, None, 0) for r in cursor.fetchall()]
+
+    def is_device_paired(self, node_id: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT is_paired FROM devices WHERE node_id = ?", (node_id,))
+                row = cursor.fetchone()
+                return bool(row[0]) if row else False
+            except sqlite3.OperationalError:
+                return False
+
+    def get_device_trust_token(self, node_id: str) -> str:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT trust_token FROM devices WHERE node_id = ?", (node_id,))
+                row = cursor.fetchone()
+                return row[0] if row else None
+            except sqlite3.OperationalError:
+                return None
+
+    def verify_device_trust(self, node_id: str, token: str) -> bool:
+        if not token:
+            return False
+        saved_token = self.get_device_trust_token(node_id)
+        return saved_token == token and self.is_device_paired(node_id)
+
+    def set_device_paired(self, node_id: str, is_paired: bool, trust_token: str = None):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("UPDATE devices SET is_paired = ?, trust_token = ? WHERE node_id = ?", 
+                             (1 if is_paired else 0, trust_token, node_id))
+                conn.commit()
+            except sqlite3.OperationalError as e:
+                logger.error(f"[DB] Error setting device paired: {e}")
 
     def save_message(self, node_id: str, text: str, direction: str, status: str = 'delivered', msg_uuid: str = None):
         if not msg_uuid:
@@ -237,19 +284,30 @@ class SysNodeDatabase:
             logger.error(f"[DB] Error guardando mensaje: {e}")
             return None
 
-    def get_chat_history(self, node_id: str, limit: int = 50):
+    def get_chat_history(self, node_id: str, limit: int = 15, offset: int = 0):
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT msg_uuid, timestamp, text, direction FROM messages 
-                    WHERE node_id = ? ORDER BY id DESC LIMIT ?
-                ''', (node_id, limit))
+                    WHERE node_id = ? ORDER BY id DESC LIMIT ? OFFSET ?
+                ''', (node_id, limit, offset))
                 rows = cursor.fetchall()
                 return rows[::-1]
         except Exception as e:
             logger.error(f"[DB] Error obteniendo historial para {node_id}: {e}")
             return []
+
+    def get_chat_history_count(self, node_id: str) -> int:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM messages WHERE node_id = ?", (node_id,))
+                row = cursor.fetchone()
+                return row[0] if row else 0
+        except Exception as e:
+            logger.error(f"[DB] Error obteniendo conteo de historial para {node_id}: {e}")
+            return 0
 
     def delete_message(self, msg_uuid: str):
         try:

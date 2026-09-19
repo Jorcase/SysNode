@@ -29,7 +29,8 @@
         {
           "cameraPermission": "Se necesita acceso a la cámara para escanear el código QR de SysNode."
         }
-      ]
+      ],
+      "expo-sqlite"
     ]
   }
 }

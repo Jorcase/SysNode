@@ -7,15 +7,16 @@ import {
   ScrollView,
   Alert,
   Modal,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TcpClient } from '../network/TcpClient';
 
 export default function TerminalScreen({ route, navigation }) {
   const { node } = route.params || {};
+  const insets = useSafeAreaInsets();
 
   const [sessionId, setSessionId] = useState(null);
   const [pinModalVisible, setPinModalVisible] = useState(false);
@@ -106,7 +107,8 @@ export default function TerminalScreen({ route, navigation }) {
       if (response && response.status === 'OK') {
         setPinModalVisible(false);
         setConnected(true);
-        appendOutput(`[SYSNODE] ✅ Sesión Terminal Autenticada e Iniciada con éxito.\n\n`);
+        // Limpiamos los logs internos de conexión para dejar la consola limpia (solo con el bash prompt)
+        setTerminalOutput([]);
         
         // Escuchar streaming continuo de STDOUT
         listenToStdout();
@@ -145,9 +147,21 @@ export default function TerminalScreen({ route, navigation }) {
   };
 
   const appendOutput = (text) => {
-    // Sanitizar códigos ANSI básicos para renderizado de texto simple si es necesario
-    const cleanText = text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
-    setTerminalOutput(prev => [...prev, cleanText]);
+    // Sanitizar códigos ANSI agresivamente
+    let cleanText = text
+      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')     // CSI (códigos de color, cursor, bracketed paste)
+      .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '') // OSC (Títulos de ventana y rutas, terminados en BEL o ESC \)
+      .replace(/\x1b[=>]/g, '')                   // Modos de teclado
+      .replace(/\x1b[()][A-B0-2]/g, '')           // Designadores de conjunto de caracteres
+      .replace(/\r/g, '');                        // Carriage returns
+
+    setTerminalOutput(prev => {
+      const newOutput = [...prev, cleanText];
+      // Mantener solo los últimos 300 fragmentos para no saturar la memoria y evitar lag
+      if (newOutput.length > 300) return newOutput.slice(newOutput.length - 300);
+      return newOutput;
+    });
+
     setTimeout(() => {
       if (scrollViewRef.current) {
         scrollViewRef.current.scrollToEnd({ animated: true });
@@ -181,9 +195,12 @@ export default function TerminalScreen({ route, navigation }) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0f1115]">
+    <View style={{ flex: 1, backgroundColor: '#0f1115' }}>
       {/* Header */}
-      <View className="px-4 py-3 bg-[#1e2128] border-b border-gray-800 flex-row items-center justify-between">
+      <View 
+        style={{ paddingTop: insets.top + 10 }}
+        className="px-4 pb-3 bg-[#1e2128] border-b border-gray-800 flex-row items-center justify-between"
+      >
         <View className="flex-row items-center">
           <TouchableOpacity onPress={() => navigation.goBack()} className="mr-3 p-1">
             <Ionicons name="arrow-back" size={24} color="white" />
@@ -202,7 +219,7 @@ export default function TerminalScreen({ route, navigation }) {
       {/* Consola de Texto Terminal */}
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
       >
         <ScrollView 
           ref={scrollViewRef} 
@@ -297,6 +314,6 @@ export default function TerminalScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }

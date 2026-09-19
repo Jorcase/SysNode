@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal, StyleSheet, AppState } from 'react-native';
 import { UdpDiscovery } from '../network/UdpDiscovery';
 import { TcpClient } from '../network/TcpClient';
 import { TcpServer } from '../network/TcpServer';
+import { TcpClient } from '../network/TcpClient';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
@@ -37,9 +38,13 @@ export default function HomeScreen() {
 
   const udpRef = useRef(null);
   const tcpServerRef = useRef(null);
+  const isIntentionalBackground = useRef(false);
 
-  useEffect(() => {
-    // 1. Iniciar TCP Server primero para obtener el puerto
+  const appState = useRef(AppState.currentState);
+
+  const startNetwork = () => {
+    if (tcpServerRef.current) return; // Ya está corriendo
+
     const server = new TcpServer(0, (msg) => {
       if (msg.type === "TEXT") {
         setMessages(prev => [...prev, { 
@@ -61,8 +66,8 @@ export default function HomeScreen() {
 
     server.start((boundPort) => {
       setTcpPort(boundPort);
+      global.myTcpPort = boundPort;
       
-      // 2. Una vez que tenemos el puerto TCP, iniciamos UDP Discovery
       const udp = new UdpDiscovery(nodeId, nodeName, boundPort, (peer) => {
         setPeers(prev => {
           const newPeers = { ...prev };
@@ -76,14 +81,27 @@ export default function HomeScreen() {
     });
     
     tcpServerRef.current = server;
+  };
 
-    // Limpiar nodos caídos cada 5 segundos
+  const stopNetwork = () => {
+    if (udpRef.current) {
+      udpRef.current.stop();
+      udpRef.current = null;
+    }
+    if (tcpServerRef.current) {
+      tcpServerRef.current.stop();
+      tcpServerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    startNetwork();
+
     const cleanupInterval = setInterval(() => {
       const now = Date.now();
       setPeers(prev => {
         const active = {};
         for (const [id, peer] of Object.entries(prev)) {
-          // Si el nodo emitió beacon en los últimos 15 segundos, está vivo
           if (now - peer.last_seen < 15000) {
             active[id] = peer;
           }
@@ -92,10 +110,26 @@ export default function HomeScreen() {
       });
     }, 5000);
 
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('App ha vuelto al primer plano. Reiniciando red...');
+        isIntentionalBackground.current = false; // Resetear el flag al volver
+        startNetwork();
+      } else if (nextAppState.match(/inactive|background/)) {
+        if (isIntentionalBackground.current) {
+          console.log('App en segundo plano intencional (ej. File Picker). Ignorando...');
+        } else {
+          console.log('App en segundo plano. Deteniendo red...');
+          stopNetwork();
+        }
+      }
+      appState.current = nextAppState;
+    });
+
     return () => {
-      if (udpRef.current) udpRef.current.stop();
-      if (tcpServerRef.current) tcpServerRef.current.stop();
+      stopNetwork();
       clearInterval(cleanupInterval);
+      subscription.remove();
     };
   }, [nodeId, nodeName]);
 
@@ -130,11 +164,15 @@ export default function HomeScreen() {
     if (!selectedPeer) return;
     
     try {
+      isIntentionalBackground.current = true; // Prevenir cierre de red
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true // Importante para poder leer el archivo en JS
       });
       
-      if (result.canceled) return;
+      if (result.canceled) {
+        // isIntentionalBackground se reseteará cuando la app vuelva a 'active'
+        return;
+      }
       
       const file = result.assets[0];
       
@@ -334,18 +372,52 @@ export default function HomeScreen() {
                      const parts = manualIp.trim().split(':');
                      const ip = parts[0];
                      const port = parts.length > 1 && !isNaN(parts[1]) ? parseInt(parts[1]) : 50001;
-                     const syntheticId = 'manual_' + Date.now();
-                     setPeers(prev => ({
-                       ...prev,
-                       [syntheticId]: {
-                         node_id: syntheticId,
-                         hostname: `Manual_${ip}`,
-                         os: "unknown",
-                         ip: ip,
-                         tcp_port: port,
-                         last_seen: Date.now() + 86400000
+                     
+                     const addPeer = (finalId, finalName) => {
+                       setPeers(prev => ({
+                         ...prev,
+                         [finalId]: {
+                           node_id: finalId,
+                           hostname: finalName,
+                           os: "unknown",
+                           ip: ip,
+                           tcp_port: port,
+                           last_seen: Date.now() + 86400000
+                         }
+                       }));
+                     };
+                     
+                     const pingClient = new TcpClient(ip, port);
+                     pingClient.connect(
+                       async () => {
+                         try {
+                           const { getIdentity } = require('../network/MyIdentity');
+                           const identity = getIdentity();
+                           const response = await pingClient.sendMessageWithResponse({
+                             action: 'PING_NODE',
+                             sender_id: identity.node_id,
+                             sender_name: identity.node_name
+                           });
+                           
+                           if (response && response.status === 'OK') {
+                             const finalId = response.node_id || `manual_${Date.now()}`;
+                             const finalName = response.hostname || `Manual_${ip}`;
+                             addPeer(finalId, finalName);
+                           } else {
+                             addPeer(`manual_${Date.now()}`, `Manual_${ip}`);
+                           }
+                         } catch (e) {
+                           addPeer(`manual_${Date.now()}`, `Manual_${ip}`);
+                         } finally {
+                           if (pingClient.client) pingClient.client.destroy();
+                         }
+                       },
+                       () => {
+                         // On error
+                         addPeer(`manual_${Date.now()}`, `Manual_${ip}`);
                        }
-                     }));
+                     );
+                     
                      setShowManualModal(false);
                      setManualIp('');
                   }

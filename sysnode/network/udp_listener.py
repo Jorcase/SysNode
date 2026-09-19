@@ -36,6 +36,8 @@ class UDPListener(threading.Thread):
         super().__init__(daemon=True, name="UDPListenerThread")
         self.my_node_id = my_node_id
         self.event_callback = event_callback
+        self.running = False
+        self.stealth_mode = False
         
         # Diccionario thread-safe protegido por Lock:
         # node_id -> {hostname, os, tcp_port, ip, last_seen}
@@ -43,7 +45,6 @@ class UDPListener(threading.Thread):
         self.peers_lock = threading.Lock()
         
         self._stop_event = threading.Event()
-        self.running = False
 
     def run(self) -> None:
         self.running = True
@@ -88,7 +89,10 @@ class UDPListener(threading.Thread):
         logger.info("UDPListener detenido.")
 
     def _process_datagram(self, data: bytes, peer_ip: str) -> None:
-        """Parsea el JSON entrante e ignora el propio nodo."""
+        """Parsea el JSON entrante e ignora el propio nodo. Si el modo oculto está activo, ignora todo."""
+        if self.stealth_mode:
+            return
+            
         try:
             payload = json.loads(data.decode("utf-8"))
             node_id = payload.get("node_id")

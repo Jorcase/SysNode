@@ -1,0 +1,1 @@
+# Reglas del Proyecto\n- Se permite usar librerías externas que faciliten el trabajo o mejoren el rendimiento, con tal de tener una mejor app. Deben ser compatibles con entornos de producción (APK/AAB/IPA).

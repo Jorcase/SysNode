@@ -24,27 +24,32 @@ class TCPClient:
     """
 
     @staticmethod
-    def send_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, text: str, msg_uuid: str = None) -> Tuple[bool, str]:
+    def send_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, text: str, msg_uuid: str = None, sender_tcp_port: int = None) -> Tuple[bool, str]:
         """Envía un texto al Shared Board de un nodo remoto."""
         payload: Dict[str, Any] = {
             "action": ActionType.SHARE_TEXT,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "trust_token": trust_token,
             "payload": text
         }
+        if sender_tcp_port:
+            payload["sender_tcp_port"] = sender_tcp_port
         if msg_uuid:
             payload["msg_uuid"] = msg_uuid
             
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 
     @staticmethod
-    def ping_node(peer_ip: str, peer_port: int, sender_id: str, sender_name: str) -> Tuple[bool, Dict[str, Any]]:
+    def ping_node(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, sender_tcp_port: int = None) -> Tuple[bool, Dict[str, Any]]:
         """Pings a remote node to retrieve its identity info."""
         payload: Dict[str, Any] = {
             "action": ActionType.PING_NODE,
             "sender_id": sender_id,
             "sender_name": sender_name
         }
+        if sender_tcp_port:
+            payload["sender_tcp_port"] = sender_tcp_port
         # Modified _connect_and_send behavior since we expect a JSON dictionary response back
         # Actually _connect_and_send returns (success, error_msg_or_status), but we need the dict.
         # Let's write a custom connection block.
@@ -61,37 +66,73 @@ class TCPClient:
             return False, {}
 
     @staticmethod
-    def edit_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, msg_uuid: str, new_text: str) -> Tuple[bool, str]:
+    def send_pairing_request(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, sender_tcp_port: int = None) -> Tuple[bool, str]:
+        """Solicita vinculación con un nodo remoto enviando el token de confianza propio."""
+        payload: Dict[str, Any] = {
+            "action": ActionType.PAIRING_REQ,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "trust_token": trust_token
+        }
+        if sender_tcp_port:
+            payload["sender_tcp_port"] = sender_tcp_port
+        return TCPClient._connect_and_send(peer_ip, peer_port, payload)
+
+    @staticmethod
+    def send_pairing_response(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, accepted: bool, sender_tcp_port: int = None) -> Tuple[bool, str]:
+        """Envía la respuesta a una solicitud de vinculación."""
+        payload: Dict[str, Any] = {
+            "action": ActionType.PAIRING_RESP,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "trust_token": trust_token if accepted else "",
+            "accepted": accepted
+        }
+        if sender_tcp_port:
+            payload["sender_tcp_port"] = sender_tcp_port
+        return TCPClient._connect_and_send(peer_ip, peer_port, payload)
+
+    @staticmethod
+    def edit_text(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, msg_uuid: str, new_text: str, sender_tcp_port: int = None) -> Tuple[bool, str]:
         """Solicita la edición de un mensaje previamente enviado al nodo remoto."""
         payload: Dict[str, Any] = {
             "action": ActionType.EDIT_MSG,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "trust_token": trust_token,
             "msg_uuid": msg_uuid,
             "new_text": new_text
         }
+        if sender_tcp_port:
+            payload["sender_tcp_port"] = sender_tcp_port
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 
     @staticmethod
-    def send_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, command_key: str) -> Tuple[bool, str]:
+    def send_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, command_key: str, sender_tcp_port: int = None) -> Tuple[bool, str]:
         """Solicita la ejecución de un comando validado por lista blanca en un nodo remoto."""
         payload: Dict[str, Any] = {
             "action": ActionType.REMOTE_CMD,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "trust_token": trust_token,
             "command": command_key
         }
+        if sender_tcp_port:
+            payload["sender_tcp_port"] = sender_tcp_port
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 
     @staticmethod
-    def send_bash_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, bash_command: str) -> Tuple[bool, str]:
+    def send_bash_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, bash_command: str, sender_tcp_port: int = None) -> Tuple[bool, str]:
         """Solicita la ejecución de un comando shell arbitrario (JSON custom) en un nodo remoto."""
         payload: Dict[str, Any] = {
             "action": ActionType.REMOTE_BASH_CMD,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "trust_token": trust_token,
             "bash_command": bash_command
         }
+        if sender_tcp_port:
+            payload["sender_tcp_port"] = sender_tcp_port
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 
     @staticmethod
@@ -100,6 +141,7 @@ class TCPClient:
         peer_port: int,
         sender_id: str,
         sender_name: str,
+        trust_token: str,
         file_path: str,
         progress_callback=None
     ) -> Tuple[bool, str]:
@@ -121,6 +163,7 @@ class TCPClient:
             "action": ActionType.FILE_TRANSFER_META,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "trust_token": trust_token,
             "filename": filename,
             "filesize_bytes": filesize,
             "sha256": sha256

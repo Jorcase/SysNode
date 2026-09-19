@@ -1,20 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, SafeAreaView, TextInput, TouchableOpacity, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMyIdentity } from '../network/MyIdentity';
+import { useMyIdentity, saveIdentity } from '../network/MyIdentity';
+import TcpSocket from 'react-native-tcp-socket';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   
   const { identity, updateIdentity } = useMyIdentity();
-  const [name, setName] = useState(identity?.node_name || 'Desconocido');
+  const [name, setName] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
+  const [localIp, setLocalIp] = useState('Calculando...');
 
-  // Update local state if global changes
-  React.useEffect(() => {
-    if (identity?.node_name) setName(identity.node_name);
+  useEffect(() => {
+    if (identity?.node_name) {
+      setName(identity.node_name);
+    }
   }, [identity?.node_name]);
+
+  useEffect(() => {
+    const client = TcpSocket.createConnection({
+      port: 53,
+      host: '8.8.8.8',
+      timeout: 2000
+    }, () => {
+      if (client.address && client.address().address) {
+        setLocalIp(client.address().address);
+      } else {
+        setLocalIp('Desconocida');
+      }
+      client.destroy();
+    });
+    
+    client.on('error', () => {
+      setLocalIp('Desconocida');
+      client.destroy();
+    });
+  }, []);
 
   const toggleStealth = () => {
     if (identity) updateIdentity({ is_stealth: !identity.is_stealth });
@@ -83,15 +106,15 @@ export default function ProfileScreen() {
           </View>
           <View className="flex-row justify-between mb-2">
             <Text className="text-sm font-medium text-gray-500 dark:text-gray-400">IP Local</Text>
-            <Text className="text-sm font-bold text-black dark:text-white">192.168.0.49</Text>
+            <Text className="text-sm font-bold text-black dark:text-white">{localIp}</Text>
           </View>
           <View className="flex-row justify-between mb-2">
             <Text className="text-sm font-medium text-gray-500 dark:text-gray-400">Puerto TCP</Text>
-            <Text className="text-sm font-bold text-black dark:text-white">46623</Text>
+            <Text className="text-sm font-bold text-black dark:text-white">{global.myTcpPort || 'Cargando...'}</Text>
           </View>
           <View className="flex-row justify-between">
             <Text className="text-sm font-medium text-gray-500 dark:text-gray-400">ID Único</Text>
-            <Text className="text-sm font-bold text-black dark:text-white">a8f9-3c21-mock</Text>
+            <Text className="text-sm font-bold text-black dark:text-white">{identity?.node_id || 'Desconocido'}</Text>
           </View>
         </View>
 

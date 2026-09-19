@@ -28,13 +28,14 @@ class TCPServer(threading.Thread):
     Por cada cliente aceptado, delega la atención a un hilo TCPClientHandlerThread.
     """
 
-    def __init__(self, tcp_port: int, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None):
+    def __init__(self, tcp_port: int, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None, is_paired_checker=None):
         super().__init__(daemon=True, name="TCPServerThread")
         self.tcp_port = tcp_port
         self.event_callback = event_callback
         self.node_id = node_id
         self.node_name = node_name
         self.download_dir_getter = download_dir_getter
+        self.is_paired_checker = is_paired_checker
         self._stop_event = threading.Event()
         self.running = False
         self.server_sock = None
@@ -67,7 +68,8 @@ class TCPServer(threading.Thread):
                     event_callback=self.event_callback,
                     node_id=self.node_id,
                     node_name=self.node_name,
-                    download_dir_getter=self.download_dir_getter
+                    download_dir_getter=self.download_dir_getter,
+                    is_paired_checker=self.is_paired_checker
                 )
                 worker.start()
 
@@ -93,7 +95,7 @@ class TCPClientHandlerThread(threading.Thread):
     Recibe la trama con framing, determina la acción y responde si corresponde.
     """
 
-    def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None):
+    def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None, is_paired_checker=None):
         super().__init__(daemon=True, name=f"TCPWorker-{peer_ip}")
         self.client_sock = client_sock
         self.peer_ip = peer_ip
@@ -101,6 +103,7 @@ class TCPClientHandlerThread(threading.Thread):
         self.node_id = node_id
         self.node_name = node_name
         self.download_dir_getter = download_dir_getter
+        self.is_paired_checker = is_paired_checker
 
     def run(self) -> None:
         keep_socket_open = False
@@ -123,8 +126,17 @@ class TCPClientHandlerThread(threading.Thread):
                 action = payload.get("action")
                 sender_id = payload.get("sender_id", "unknown")
                 sender_name = payload.get("sender_name", "Desconocido")
+                sender_tcp_port = payload.get("sender_tcp_port")
 
                 logger.info(f"Mensaje TCP Recibido | Acción: '{action}' | Emisor: {sender_name} ({self.peer_ip})")
+
+                # Verificar pairing para todas las acciones excepto PING, PAIRING_REQ y PAIRING_RESP
+                if action not in [ActionType.PING_NODE, ActionType.PAIRING_REQ, ActionType.PAIRING_RESP]:
+                    trust_token = payload.get("trust_token", "")
+                    if self.is_paired_checker and not self.is_paired_checker(sender_id, trust_token):
+                        logger.warning(f"🚨 ACCESO DENEGADO: Intento de acción '{action}' desde nodo no emparejado {sender_name} ({sender_id}).")
+                        send_framed_message(self.client_sock, {"status": "ERROR", "msg": "NOT_PAIRED"})
+                        break
 
                 # Caso 0: Ping Node (para conexiones manuales)
                 if action == ActionType.PING_NODE:
@@ -138,6 +150,36 @@ class TCPClientHandlerThread(threading.Thread):
                     send_framed_message(self.client_sock, response)
                     break
 
+                # PAIRING: Solicitud de Emparejamiento
+                elif action == ActionType.PAIRING_REQ:
+                    trust_token = payload.get("trust_token", "")
+                    self.event_callback({
+                        "event": "PAIRING_REQUEST_RECEIVED",
+                        "sender_id": sender_id,
+                        "sender_name": sender_name,
+                        "peer_ip": self.peer_ip,
+                        "sender_tcp_port": sender_tcp_port,
+                        "trust_token": trust_token
+                    })
+                    send_framed_message(self.client_sock, {"status": "OK", "msg": "Pairing request received."})
+                    break
+
+                # PAIRING: Respuesta de Emparejamiento
+                elif action == ActionType.PAIRING_RESP:
+                    trust_token = payload.get("trust_token", "")
+                    accepted = payload.get("accepted", False)
+                    self.event_callback({
+                        "event": "PAIRING_RESPONSE_RECEIVED",
+                        "sender_id": sender_id,
+                        "sender_name": sender_name,
+                        "peer_ip": self.peer_ip,
+                        "sender_tcp_port": sender_tcp_port,
+                        "trust_token": trust_token,
+                        "accepted": accepted
+                    })
+                    send_framed_message(self.client_sock, {"status": "OK", "msg": "Pairing response acknowledged."})
+                    break
+
                 # Caso 1: Compartir Texto (Shared Board)
                 elif action == ActionType.SHARE_TEXT:
                     text_content = payload.get("payload", "")
@@ -147,6 +189,7 @@ class TCPClientHandlerThread(threading.Thread):
                         "sender_id": sender_id,
                         "sender_name": sender_name,
                         "peer_ip": self.peer_ip,
+                        "sender_tcp_port": sender_tcp_port,
                         "text": text_content,
                         "msg_uuid": msg_uuid
                     })
@@ -183,6 +226,7 @@ class TCPClientHandlerThread(threading.Thread):
                         "sender_id": sender_id,
                         "sender_name": sender_name,
                         "peer_ip": self.peer_ip,
+                        "sender_tcp_port": sender_tcp_port,
                         "success": success,
                         "result": result_msg
                     })

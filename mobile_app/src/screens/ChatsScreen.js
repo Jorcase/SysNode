@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ChatListItem from '../components/ChatListItem';
 import { UdpDiscovery } from '../network/UdpDiscovery';
 import { TcpServer } from '../network/TcpServer';
+import { TcpClient } from '../network/TcpClient';
 import { useMyIdentity } from '../network/MyIdentity';
 import { MessageStorage } from '../network/MessageStorage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -62,6 +63,21 @@ export default function ChatsScreen() {
       
       if (payload.action === 'SHARE_TEXT' || payload.type === 'TEXT') {
         const senderId = payload.sender_id || 'pc_desktop_node';
+        
+        // Update peer to appear online since we just got a message
+        setPeers(prev => {
+          const newPeers = { ...prev };
+          newPeers[senderId] = {
+            node_id: senderId,
+            hostname: payload.sender_name || payload.sender || senderId,
+            ip: payload.peer_ip || '127.0.0.1',
+            tcp_port: payload.sender_tcp_port || 50001,
+            os: 'Unknown',
+            last_seen: Date.now()
+          };
+          return newPeers;
+        });
+        
         const text = payload.payload || payload.text;
         const msgId = payload.msg_uuid || Date.now().toString();
         const newMsg = {
@@ -70,7 +86,10 @@ export default function ChatsScreen() {
           time: new Date().toLocaleTimeString().slice(0, 5),
           timestamp: Date.now(),
           isMe: false,
-          status: 'read'
+          status: 'read',
+          sender_name: payload.sender_name || payload.sender || senderId,
+          ip: payload.peer_ip || '127.0.0.1',
+          tcp_port: payload.sender_tcp_port || 50001
         };
         await MessageStorage.saveMessage(senderId, newMsg);
         refreshLatestMessages();
@@ -82,6 +101,7 @@ export default function ChatsScreen() {
 
     server.start((boundPort) => {
       setTcpPort(boundPort);
+      global.myTcpPort = boundPort;
       
       if (nodeId && !identity?.is_stealth) {
         const udp = new UdpDiscovery(nodeId, nodeName, boundPort, (peer) => {
@@ -204,17 +224,48 @@ export default function ChatsScreen() {
     if (manualIp.trim().length > 0 && manualPort.trim().length > 0) {
       const port = parseInt(manualPort, 10) || 50001;
       
-      setPeers(prev => {
-        const newPeers = { ...prev };
-        newPeers[`manual-${manualIp}`] = {
-          node_id: `manual-${manualIp}`,
-          hostname: manualIp,
-          ip: manualIp,
-          tcp_port: port,
-          last_seen: Date.now()
-        };
-        return newPeers;
-      });
+      const addPeer = (finalId, finalName) => {
+        setPeers(prev => {
+          const newPeers = { ...prev };
+          newPeers[finalId] = {
+            node_id: finalId,
+            hostname: finalName,
+            ip: manualIp,
+            tcp_port: port,
+            last_seen: Date.now()
+          };
+          return newPeers;
+        });
+      };
+
+      const pingClient = new TcpClient(manualIp, port);
+      pingClient.connect(
+        async () => {
+          try {
+            const response = await pingClient.sendMessageWithResponse({
+              action: 'PING_NODE',
+              sender_id: nodeId,
+              sender_name: nodeName
+            });
+            
+            if (response && response.status === 'OK') {
+              const finalId = response.node_id || `manual-${manualIp}`;
+              const finalName = response.hostname || manualIp;
+              addPeer(finalId, finalName);
+            } else {
+              addPeer(`manual-${manualIp}`, manualIp);
+            }
+          } catch (e) {
+            addPeer(`manual-${manualIp}`, manualIp);
+          } finally {
+            if (pingClient.client) pingClient.client.destroy();
+          }
+        },
+        () => {
+          // On error
+          addPeer(`manual-${manualIp}`, manualIp);
+        }
+      );
 
       setShowManualModal(false);
       setManualIp('');

@@ -51,7 +51,8 @@ class SysNodeDesktopApp(ctk.CTk):
             logger.info("SysNode ya está corriendo. Despertando instancia previa...")
             sys.exit(0)
             
-        # Iniciar hilo de bandeja de sistema (System Tray)
+        # Vincular evento de cierre de ventana para cerrar todo completamente
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         self.build_ui()
         
@@ -93,6 +94,19 @@ class SysNodeDesktopApp(ctk.CTk):
             draw_check = ImageDraw.Draw(img_check)
             draw_check.line([(6, 17), (13, 24), (26, 8)], fill="white", width=4)
             self.icons['check'] = ctk.CTkImage(light_image=img_check, size=(16, 16))
+            
+            # Status icons (formerly in poll_event_queue)
+            def create_circle_icon(color):
+                img = Image.new('RGBA', (20, 20), (255, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+                draw.ellipse((4, 4, 16, 16), fill=color)
+                return ctk.CTkImage(light_image=img, size=(12, 12))
+                
+            self.icon_online = create_circle_icon("#2ECC71") # Verde
+            self.icon_offline = create_circle_icon("#95A5A6") # Gris
+            self.icon_unread = create_circle_icon("#E74C3C") # Rojo
+            self.icon_empty = create_circle_icon((0,0,0,0)) # Transparente
+            
         except Exception as e:
             logger.error(f"Error cargando iconos: {e}")
 
@@ -127,6 +141,24 @@ class SysNodeDesktopApp(ctk.CTk):
                 
     def build_ui(self):
         self.load_icons()
+        
+        self.known_devices = {}
+        self.chat_bubbles = {}
+        try:
+            all_db_devices = self.core.db.get_all_devices()
+        except Exception as e:
+            logger.error(f"[UI] DB query failed, attempting recovery... {e}")
+            try:
+                self.core.db._init_db()
+                all_db_devices = self.core.db.get_all_devices()
+            except Exception as e2:
+                logger.error(f"[UI] Unrecoverable DB error: {e2}")
+                all_db_devices = []
+                
+        for device in all_db_devices:
+            node_id, hostname, os_type, last_ip, last_port = device[:5]
+            is_paired = device[5] if len(device) > 5 else 0
+            self.known_devices[node_id] = {'hostname': hostname, 'os_type': os_type, 'ip': last_ip, 'tcp_port': last_port, 'is_paired': is_paired}
         
         # Grid layout principal: 1 fila, 2 columnas (Sidebar y Main Chat)
         self.grid_rowconfigure(0, weight=1)
@@ -236,6 +268,8 @@ class SysNodeDesktopApp(ctk.CTk):
         
         is_stealth = (self.login_mode_var.get() == "oculto")
         self.core.udp_beacon.stealth_mode = is_stealth
+        if hasattr(self.core, 'udp_listener'):
+            self.core.udp_listener.stealth_mode = is_stealth
         if hasattr(self, 'switch_stealth'):
             if is_stealth:
                 self.switch_stealth.select()
@@ -354,8 +388,10 @@ class SysNodeDesktopApp(ctk.CTk):
         
         import qrcode
         from PIL import Image
+        import urllib.parse
         qr = qrcode.QRCode(version=1, box_size=5, border=2)
-        qr_data = f'{{"ip": "{self.core.local_ip}", "port": {self.core.tcp_port}}}'
+        safe_name = urllib.parse.quote(self.core.node_name)
+        qr_data = f"sysnode://{self.core.local_ip}:{self.core.tcp_port}?node_id={self.core.node_id}&name={safe_name}"
         qr.add_data(qr_data)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white").get_image()
@@ -605,6 +641,8 @@ class SysNodeDesktopApp(ctk.CTk):
     def toggle_stealth_mode(self):
         is_stealth = self.switch_stealth.get() == 1
         self.core.udp_beacon.stealth_mode = is_stealth
+        if hasattr(self.core, 'udp_listener'):
+            self.core.udp_listener.stealth_mode = is_stealth
         if is_stealth:
             messagebox.showinfo("Modo de Red", "Modo Oculto ACTIVADO.\nTu equipo no emitirá anuncios UDP Broadcast, permaneciendo invisible en la LAN.")
         else:
@@ -780,20 +818,7 @@ class SysNodeDesktopApp(ctk.CTk):
         self.chat_scroll = ctk.CTkScrollableFrame(self.view_chat, fg_color="transparent")
         self.chat_scroll.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         
-        # Habilitar desplazamiento suave con la rueda del mouse (evitar saltos directo a extremos)
-        def _on_chat_scroll(event):
-            if hasattr(self, 'view_chat') and self.view_chat.winfo_ismapped():
-                canvas = self.chat_scroll._parent_canvas
-                if event.num == 4:
-                    canvas.yview_scroll(-3, "units")
-                elif event.num == 5:
-                    canvas.yview_scroll(3, "units")
-                elif getattr(event, 'delta', 0) != 0:
-                    amount = int(-1 * (event.delta / 40)) if abs(event.delta) >= 40 else (-3 if event.delta > 0 else 3)
-                    canvas.yview_scroll(amount, "units")
-
-        self.chat_scroll._parent_canvas.bind_all("<Button-4>", _on_chat_scroll)
-        self.chat_scroll._parent_canvas.bind_all("<Button-5>", _on_chat_scroll)
+        # Nota: Se eliminó el _on_chat_scroll custom porque interfería con el comportamiento nativo de CustomTkinter y rompía el UX en Linux/Windows.
         
         # Barra inferior (Input + Botones)
         self.input_frame = ctk.CTkFrame(self.view_chat, corner_radius=8)
@@ -991,8 +1016,8 @@ class SysNodeDesktopApp(ctk.CTk):
         if not self.selected_node_id:
             return
             
-        if messagebox.askyesno("Limpiar Chat", "¿Estás seguro de que querés borrar toda la conversación con este dispositivo?"):
-            self.core.db.clear_chat_history(self.selected_node_id)
+        if messagebox.askyesno("Limpiar Chat", "¿Estás seguro de que querés borrar toda la conversación con este dispositivo? (Si está desconectado, desaparecerá de la lista)"):
+            self.core.db.delete_device(self.selected_node_id)
             self.load_chat_history(self.selected_node_id)
             
     def delete_single_message(self, msg_uuid):
@@ -1001,54 +1026,96 @@ class SysNodeDesktopApp(ctk.CTk):
             self.core.db.delete_message(msg_uuid)
             self.load_chat_history(self.selected_node_id)
 
-    def load_chat_history(self, node_id):
-        # Limpiar chat actual
-        for widget in self.chat_scroll.winfo_children():
-            widget.destroy()
-            
-        recent_messages = self.core.db.get_chat_history(node_id, limit=50)
-        if not recent_messages:
+    def load_chat_history(self, node_id, is_load_more=False):
+        PAGE_SIZE = 15
+        
+        if not is_load_more:
+            for widget in self.chat_scroll.winfo_children():
+                widget.destroy()
+            self.chat_bubbles = {}
+            self.chat_history_offset = 0
+            self.chat_first_widget = None
+            if hasattr(self, 'btn_load_more'):
+                self.btn_load_more = None
+
+        if is_load_more:
+            self.chat_history_offset += PAGE_SIZE
+
+        recent_messages = self.core.db.get_chat_history(node_id, limit=PAGE_SIZE, offset=self.chat_history_offset)
+        total_messages = self.core.db.get_chat_history_count(node_id)
+        
+        if not recent_messages and not is_load_more:
             return
-            
+
+        if hasattr(self, 'btn_load_more') and self.btn_load_more and self.btn_load_more.winfo_exists():
+            self.btn_load_more.destroy()
+            self.btn_load_more = None
+
         info = self.known_devices.get(node_id, {})
         remote_name = info.get("hostname", "Remoto")
-            
+
+        new_first_widget = None
+
         for msg_uuid, ts, text, direction in recent_messages:
             sender_str = remote_name if direction == "IN" else "Yo"
+            frame = None
             
             if text.startswith("FILE:"):
                 filepath = text.split("FILE:")[1]
                 ext = os.path.splitext(filepath)[1].lower()
                 if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
-                    self.append_image_to_chat(filepath, sender=sender_str, add_timestamp=False)
+                    frame = self.append_image_to_chat(filepath, sender=sender_str, add_timestamp=False, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
                 else:
-                    self.append_generic_file_to_chat(filepath, sender=sender_str, add_timestamp=False)
+                    frame = self.append_generic_file_to_chat(filepath, sender=sender_str, add_timestamp=False, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             elif text.startswith("CMD_REQ:"):
                 cmd_txt = text.split("CMD_REQ:")[1]
                 if direction == "OUT":
-                    self.append_to_chat(f"[SysAdmin] Yo envié comando: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                    frame = self.append_to_chat(f"[SysAdmin] Comando enviado: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
                 else:
-                    self.append_to_chat(f"[SysAdmin] {sender_str} te envió un comando: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                    frame = self.append_to_chat(f"[SysAdmin] Comando recibido: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             elif text.startswith("CMD_RES:"):
                 res_txt = text.split("CMD_RES:")[1]
                 if direction == "IN":
-                    self.append_to_chat(f"[SysAdmin] Resultado de {sender_str}: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                    frame = self.append_to_chat(f"[SysAdmin] Resultado recibido: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
                 else:
-                    self.append_to_chat(f"[SysAdmin] Resultado enviado a {remote_name}: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                    frame = self.append_to_chat(f"[SysAdmin] Resultado enviado: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             else:
-                self.append_to_chat(f"{text}", add_timestamp=True, raw_msg=text, msg_uuid=msg_uuid, direction=direction)
+                frame = self.append_to_chat(f"{text}", add_timestamp=True, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+            
+            if new_first_widget is None and frame is not None:
+                new_first_widget = frame
                 
+        if new_first_widget:
+            self.chat_first_widget = new_first_widget
+
+        if (self.chat_history_offset + PAGE_SIZE) < total_messages:
+            self.btn_load_more = ctk.CTkButton(
+                self.chat_scroll, text="Cargar mensajes anteriores...", fg_color="transparent", 
+                text_color="#3b82f6", hover_color=("gray85", "gray25"), height=25,
+                command=lambda: self.load_chat_history(node_id, is_load_more=True)
+            )
+            if hasattr(self, 'chat_first_widget') and self.chat_first_widget:
+                self.btn_load_more.pack(before=self.chat_first_widget, pady=5)
+            else:
+                self.btn_load_more.pack(side="top", pady=5)
+
         self.update_idletasks()
-        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        if not is_load_more:
+            self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        # Eliminado el yview_scroll que causaba los saltos bruscos
+
         
-    def append_to_chat(self, text, add_timestamp=True, raw_msg="", msg_uuid=None, direction=None):
+    def append_to_chat(self, text, add_timestamp=True, raw_msg="", msg_uuid=None, direction=None, auto_scroll=True, before_widget=None):
         if not raw_msg:
             raw_msg = text
             
         is_out = (direction == "OUT")
         
         outer_frame = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-        outer_frame.pack(fill="x", pady=3, padx=5)
+        if before_widget:
+            outer_frame.pack(before=before_widget, fill="x", pady=3, padx=5)
+        else:
+            outer_frame.pack(fill="x", pady=3, padx=5)
         
         msg_frame = ctk.CTkFrame(
             outer_frame, 
@@ -1066,6 +1133,11 @@ class SysNodeDesktopApp(ctk.CTk):
             text_color="white" if is_out else ("gray10", "gray90")
         )
         lbl_msg.pack(side="left", padx=8, pady=6)
+        
+        if msg_uuid:
+            if not hasattr(self, 'chat_bubbles'):
+                self.chat_bubbles = {}
+            self.chat_bubbles[msg_uuid] = lbl_msg
         
         import tkinter as tk
         if msg_uuid:
@@ -1102,7 +1174,12 @@ class SysNodeDesktopApp(ctk.CTk):
         btn_copy.pack(side="right", padx=2)
             
         self.update_idletasks()
-        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        if auto_scroll:
+            self.chat_scroll._parent_canvas.yview_moveto(1.0)
+            
+        return outer_frame
+            
+        return outer_frame
         
     def prompt_edit_message(self, msg_uuid, old_text):
         self.editing_msg_uuid = msg_uuid
@@ -1129,16 +1206,27 @@ class SysNodeDesktopApp(ctk.CTk):
         self.clipboard_append(text)
         self.update() # Necesario en tkinter para registrar el clipboard
 
-    def append_image_to_chat(self, filepath, sender="Remoto", add_timestamp=True):
+    def append_image_to_chat(self, filepath, sender="Remoto", add_timestamp=True, direction="IN", auto_scroll=True, before_widget=None):
         from PIL import Image
         
-        msg_frame = ctk.CTkFrame(self.chat_scroll, fg_color=("gray85", "gray20"))
-        msg_frame.pack(fill="x", pady=2, padx=5)
+        is_out = (direction == "OUT")
+        outer_frame = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
+        if before_widget:
+            outer_frame.pack(before=before_widget, fill="x", pady=2, padx=5)
+        else:
+            outer_frame.pack(fill="x", pady=2, padx=5)
         
-        prefix = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{sender}]: " if add_timestamp else ""
+        msg_frame = ctk.CTkFrame(
+            outer_frame, 
+            fg_color=("#2563eb", "#1d4ed8") if is_out else ("gray85", "gray20"),
+            corner_radius=6
+        )
+        msg_frame.pack(side="right" if is_out else "left", padx=5)
+        
+        prefix = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] " if add_timestamp else ""
         
         # Header del mensaje
-        lbl_header = ctk.CTkLabel(msg_frame, text=prefix + "Imagen compartida:", anchor="w")
+        lbl_header = ctk.CTkLabel(msg_frame, text=prefix + "Imagen compartida:", anchor="w", text_color="white" if is_out else ("gray10", "gray90"))
         lbl_header.pack(fill="x", padx=5, pady=(5, 0))
         
         try:
@@ -1158,7 +1246,11 @@ class SysNodeDesktopApp(ctk.CTk):
                                  command=lambda f=filepath: self.open_file_default_app(f))
         btn_open.pack(side="left", padx=5, pady=(0, 5))
         
-        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        self.update_idletasks()
+        if auto_scroll:
+            self.chat_scroll._parent_canvas.yview_moveto(1.0)
+            
+        return outer_frame
         
     def open_file_default_app(self, filepath):
         import platform, subprocess, os
@@ -1197,14 +1289,25 @@ class SysNodeDesktopApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir la ubicación: {e}")
 
-    def append_generic_file_to_chat(self, filepath, sender="Remoto", add_timestamp=True):
+    def append_generic_file_to_chat(self, filepath, sender="Remoto", add_timestamp=True, direction="IN", auto_scroll=True, before_widget=None):
         from PIL import Image, ImageDraw, ImageFont
         
-        msg_frame = ctk.CTkFrame(self.chat_scroll, fg_color=("gray85", "gray20"))
-        msg_frame.pack(fill="x", pady=2, padx=5)
+        is_out = (direction == "OUT")
+        outer_frame = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
+        if before_widget:
+            outer_frame.pack(before=before_widget, fill="x", pady=2, padx=5)
+        else:
+            outer_frame.pack(fill="x", pady=2, padx=5)
         
-        prefix = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [{sender}]: " if add_timestamp else ""
-        lbl_header = ctk.CTkLabel(msg_frame, text=prefix + "Archivo compartido:", anchor="w")
+        msg_frame = ctk.CTkFrame(
+            outer_frame, 
+            fg_color=("#2563eb", "#1d4ed8") if is_out else ("gray85", "gray20"),
+            corner_radius=6
+        )
+        msg_frame.pack(side="right" if is_out else "left", padx=5)
+        
+        prefix = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] " if add_timestamp else ""
+        lbl_header = ctk.CTkLabel(msg_frame, text=prefix + "Archivo compartido:", anchor="w", text_color="white" if is_out else ("gray10", "gray90"))
         lbl_header.pack(fill="x", padx=5, pady=(5, 0))
         
         filename = os.path.basename(filepath)
@@ -1239,7 +1342,11 @@ class SysNodeDesktopApp(ctk.CTk):
                                    command=lambda f=filepath: self.open_file_location(f))
         btn_folder.pack(side="left", padx=5)
         
-        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        self.update_idletasks()
+        if auto_scroll:
+            self.chat_scroll._parent_canvas.yview_moveto(1.0)
+            
+        return outer_frame
 
     def on_node_select(self, node_id, hostname):
         if not getattr(self, 'is_logged_in', False):
@@ -1377,7 +1484,9 @@ class SysNodeDesktopApp(ctk.CTk):
             messagebox.showerror("Error", "Faltan librerías. Ejecutá: pip install qrcode Pillow")
             return
             
-        qr_data = f"sysnode://{self.core.local_ip}:{self.core.tcp_port}"
+        import urllib.parse
+        safe_name = urllib.parse.quote(self.core.node_name)
+        qr_data = f"sysnode://{self.core.local_ip}:{self.core.tcp_port}?node_id={self.core.node_id}&name={safe_name}"
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
         qr.add_data(qr_data)
         qr.make(fit=True)
@@ -1432,7 +1541,7 @@ class SysNodeDesktopApp(ctk.CTk):
         # Modo envío normal
         success, err_msg, msg_uuid = self.core.send_text_to_peer(self.selected_node_id, msg)
         if success:
-            self.append_to_chat(f"[Yo]: {msg}", raw_msg=msg, msg_uuid=msg_uuid, direction="OUT")
+            self.append_to_chat(f"{msg}", raw_msg=msg, msg_uuid=msg_uuid, direction="OUT")
             self.msg_entry.delete(0, "end")
         else:
             self.append_to_chat(f"[ERROR] No se pudo enviar: {err_msg}")
@@ -1760,9 +1869,9 @@ class SysNodeDesktopApp(ctk.CTk):
             self.progress_bar.set(1.0)
             ext = os.path.splitext(filepath)[1].lower()
             if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
-                self.append_image_to_chat(filepath, sender="Yo")
+                self.append_image_to_chat(filepath, sender="Yo", direction="OUT")
             else:
-                self.append_generic_file_to_chat(filepath, sender="Yo")
+                self.append_generic_file_to_chat(filepath, sender="Yo", direction="OUT")
         else:
             self.progress_bar.set(0)
             self.append_to_chat(f"[ERROR] Error al enviar archivo: {err_msg}")
@@ -1783,12 +1892,23 @@ class SysNodeDesktopApp(ctk.CTk):
             menu.add_command(label="Editar IP/Puerto", command=lambda: self.edit_manual_device(node_id))
             items_added = True
             
+        if info.get('is_paired'):
+            menu.add_command(label="Desvincular", command=lambda: self.unpair_device(node_id))
+            items_added = True
+
         if not is_online:
             menu.add_command(label="Borrar", command=lambda: self.delete_device(node_id, is_manual))
             items_added = True
             
         if items_added:
             menu.tk_popup(event.x_root, event.y_root)
+
+    def unpair_device(self, node_id):
+        if messagebox.askyesno("Confirmar", "¿Seguro que querés desvincular este dispositivo? Ya no podrás comunicarte de forma segura hasta volver a vincularlo."):
+            self.core.db.set_device_paired(node_id, False, None)
+            if node_id in self.known_devices:
+                self.known_devices[node_id]['is_paired'] = 0
+            self.append_to_chat(f"[Sistema] Has desvinculado al dispositivo {node_id}.", direction="OUT")
 
     def delete_device(self, node_id, is_manual):
         if messagebox.askyesno("Confirmar", "¿Seguro que querés borrar este dispositivo?"):
@@ -1836,50 +1956,36 @@ class SysNodeDesktopApp(ctk.CTk):
     def poll_event_queue(self):
         current_peers = self.core.get_active_peers()
         
-        try:
-            all_db_devices = self.core.db.get_all_devices()
-        except Exception as e:
-            logger.error(f"[UI] DB query failed, attempting recovery... {e}")
-            try:
-                self.core.db._init_db()
-                all_db_devices = self.core.db.get_all_devices()
-            except Exception as e2:
-                logger.error(f"[UI] Unrecoverable DB error: {e2}")
-                all_db_devices = []
-        
         if not hasattr(self, 'unread_badges'):
             self.unread_badges = {}
-        if not hasattr(self, 'known_devices'):
-            self.known_devices = {}
-            
-        # Generar íconos de estado en memoria (para no usar emojis)
-        from PIL import Image, ImageDraw
-        def create_circle_icon(color):
-            img = Image.new('RGBA', (20, 20), (255, 0, 0, 0))
-            draw = ImageDraw.Draw(img)
-            draw.ellipse((4, 4, 16, 16), fill=color)
-            return ctk.CTkImage(light_image=img, size=(12, 12))
-            
-        if not hasattr(self, 'icon_online'):
-            self.icon_online = create_circle_icon("#2ECC71") # Verde
-            self.icon_offline = create_circle_icon("#95A5A6") # Gris
-            self.icon_unread = create_circle_icon("#E74C3C") # Rojo
-            self.icon_empty = create_circle_icon((0,0,0,0)) # Transparente
 
-        # Actualizar dispositivos conocidos
-        for node_id, hostname, os_type, last_ip, last_port in all_db_devices:
-            self.known_devices[node_id] = {'hostname': hostname, 'os_type': os_type, 'ip': last_ip, 'tcp_port': last_port}
+        # Actualizar dispositivos conocidos con datos de red
         for node_id, info in current_peers.items():
-            self.known_devices[node_id] = {'hostname': info['hostname'], 'os_type': info.get('os', 'Unknown'), 'manual': info.get('manual', False), 'ip': info.get('ip'), 'tcp_port': info.get('tcp_port')}
+            if node_id not in self.known_devices:
+                self.known_devices[node_id] = {}
+            self.known_devices[node_id].update({
+                'hostname': info['hostname'], 
+                'os_type': info.get('os', 'Unknown'), 
+                'manual': info.get('manual', False), 
+                'ip': info.get('ip'), 
+                'tcp_port': info.get('tcp_port')
+            })
             
         # Añadir temporal manual peers que aún no conectaron
         if hasattr(self.core, '_temp_manual_peers'):
             for node_id, info in self.core._temp_manual_peers.items():
-                self.known_devices[node_id] = {'hostname': info['hostname'], 'os_type': info.get('os', 'Unknown'), 'manual': True}
+                if node_id not in self.known_devices:
+                    self.known_devices[node_id] = {}
+                self.known_devices[node_id].update({
+                    'hostname': info['hostname'], 
+                    'os_type': info.get('os', 'Unknown'), 
+                    'manual': True
+                })
             
         # Renderizar en la UI
         for node_id, info in self.known_devices.items():
             is_online = node_id in current_peers
+            current_unread = bool(self.unread_badges.get(node_id))
             
             os_lower = info.get('os_type', '').lower()
             is_mobile = any(k in os_lower for k in ["android", "ios", "iphone", "ipad", "mobile", "smartphone"])
@@ -1892,7 +1998,9 @@ class SysNodeDesktopApp(ctk.CTk):
             else:
                 device_icon = self.icons.get('laptop') if is_desktop else self.icons.get('smartphone')
                 
-            display_text = info['hostname']
+            is_paired = info.get('is_paired', False)
+            paired_mark = " 🔒" if is_paired else ""
+            display_text = f"{info['hostname']}{paired_mark}"
             
             if node_id not in self.node_buttons:
                 node_frame = ctk.CTkFrame(self.nodes_frame, fg_color="transparent")
@@ -1913,17 +2021,25 @@ class SysNodeDesktopApp(ctk.CTk):
                     btn.bind("<Button-2>", lambda e, nid=node_id: self.show_node_context_menu(e, nid))
                 
                 # Indicador de no leído
-                unread_lbl = ctk.CTkLabel(node_frame, text="", image=self.icon_unread if self.unread_badges.get(node_id) else self.icon_empty, width=15)
+                unread_lbl = ctk.CTkLabel(node_frame, text="", image=self.icon_unread if current_unread else self.icon_empty, width=15)
                 unread_lbl.pack(side="left", padx=(0, 5))
                     
                 self.node_buttons[node_id] = node_frame
                 self.node_buttons[node_id]._select_btn = btn
                 self.node_buttons[node_id]._status_lbl = status_lbl
                 self.node_buttons[node_id]._unread_lbl = unread_lbl
+                self.node_buttons[node_id]._last_is_online = is_online
+                self.node_buttons[node_id]._last_unread = current_unread
             else:
-                self.node_buttons[node_id]._select_btn.configure(text=display_text, image=device_icon)
-                self.node_buttons[node_id]._status_lbl.configure(image=self.icon_online if is_online else self.icon_offline)
-                self.node_buttons[node_id]._unread_lbl.configure(image=self.icon_unread if self.unread_badges.get(node_id) else self.icon_empty)
+                if (getattr(self.node_buttons[node_id], '_last_is_online', None) != is_online or
+                    getattr(self.node_buttons[node_id], '_last_unread', None) != current_unread or
+                    getattr(self.node_buttons[node_id], '_last_paired', None) != is_paired):
+                    self.node_buttons[node_id]._select_btn.configure(text=display_text, image=device_icon)
+                    self.node_buttons[node_id]._status_lbl.configure(image=self.icon_online if is_online else self.icon_offline)
+                    self.node_buttons[node_id]._unread_lbl.configure(image=self.icon_unread if current_unread else self.icon_empty)
+                    self.node_buttons[node_id]._last_is_online = is_online
+                    self.node_buttons[node_id]._last_unread = current_unread
+                    self.node_buttons[node_id]._last_paired = is_paired
                     
         while True:
             try:
@@ -1937,7 +2053,7 @@ class SysNodeDesktopApp(ctk.CTk):
     def handle_network_event(self, event):
         etype = event.get('event')
         
-        if etype not in ["TEXT_RECEIVED", "MSG_EDITED", "COMMAND_RECEIVED", "FILE_RECEIVED", "FILE_PROGRESS", "TERMINAL_PIN_REQUEST"]:
+        if etype not in ["TEXT_RECEIVED", "MSG_EDITED", "COMMAND_RECEIVED", "FILE_RECEIVED", "FILE_PROGRESS", "TERMINAL_PIN_REQUEST", "PAIRING_REQUEST_RECEIVED"]:
             return
             
         sender_id = event.get('sender_id')
@@ -1948,11 +2064,29 @@ class SysNodeDesktopApp(ctk.CTk):
             peer_ip = event.get('peer_ip', '')
             self.show_terminal_pin_modal(sender_name, peer_ip, pin)
             return
+            
+        if etype == "PAIRING_REQUEST_RECEIVED":
+            peer_ip = event.get('peer_ip', '')
+            trust_token = event.get('trust_token', '')
+            self.show_pairing_request_modal(sender_id, sender_name, peer_ip, trust_token)
+            return
+
+        if etype == "PAIRING_RESPONSE_RECEIVED":
+            accepted = event.get('accepted', False)
+            if accepted:
+                if sender_id in self.known_devices:
+                    self.known_devices[sender_id]['is_paired'] = 1
+                else:
+                    self.known_devices[sender_id] = {'is_paired': 1}
+                self.append_to_chat(f"[Sistema] Vinculación aceptada por {sender_name}.", direction="IN")
+            else:
+                self.append_to_chat(f"[Sistema] Vinculación rechazada por {sender_name}.", direction="IN")
+            return
 
         if etype == "TEXT_RECEIVED":
             msg = event.get('text', '')
             if sender_id == self.selected_node_id:
-                self.append_to_chat(f"[{sender_name}]: {msg}", raw_msg=msg, direction="IN")
+                self.append_to_chat(f"{msg}", raw_msg=msg, direction="IN")
                 if hasattr(self, 'unread_badges') and sender_id in self.unread_badges:
                     del self.unread_badges[sender_id]
             else:
@@ -1962,7 +2096,16 @@ class SysNodeDesktopApp(ctk.CTk):
                 
         elif etype == "MSG_EDITED":
             if sender_id == self.selected_node_id:
-                self.load_chat_history(self.selected_node_id)
+                msg_uuid = event.get('msg_uuid', '')
+                new_text = event.get('new_text', '')
+                
+                if msg_uuid in getattr(self, 'chat_bubbles', {}):
+                    try:
+                        self.chat_bubbles[msg_uuid].configure(text=new_text)
+                    except Exception:
+                        self.load_chat_history(self.selected_node_id)
+                else:
+                    self.load_chat_history(self.selected_node_id)
             
         elif etype == "COMMAND_RECEIVED":
             response = event.get('result', '')
@@ -1970,8 +2113,8 @@ class SysNodeDesktopApp(ctk.CTk):
             success = event.get('success', False)
             icon = "[OK]" if success else "[FAIL]"
             if sender_id == self.selected_node_id:
-                self.append_to_chat(f"[SysAdmin] {sender_name} te envió un comando: {cmd}")
-                self.append_to_chat(f"[SysAdmin] Resultado enviado a {sender_name}: {icon} Comando ejecutado: {cmd}\nResultado:\n{response}")
+                self.append_to_chat(f"[SysAdmin] Comando recibido: {cmd}", direction="IN")
+                self.append_to_chat(f"[SysAdmin] Resultado enviado: {icon} Comando ejecutado: {cmd}\nResultado:\n{response}", direction="OUT")
             
         elif etype == "FILE_RECEIVED":
             filepath = event.get('filepath', '')
@@ -1980,9 +2123,10 @@ class SysNodeDesktopApp(ctk.CTk):
                 if success:
                     ext = os.path.splitext(filepath)[1].lower()
                     if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
-                        self.append_image_to_chat(filepath, sender=sender_name)
+                        self.append_image_to_chat(filepath, sender=sender_name, direction="IN")
                     else:
-                        self.append_generic_file_to_chat(filepath, sender=sender_name)
+                        self.append_generic_file_to_chat(filepath, sender=sender_name, direction="IN")
+                    self.chat_scroll._parent_canvas.yview_moveto(1.0)
                 else:
                     self.append_to_chat(f"[ERROR] Error al recibir archivo: {event.get('msg')}")
                 
@@ -1995,6 +2139,67 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.progress_bar.set(current / total)
                 if current >= total:
                     self.after(2000, lambda: self.progress_bar.grid_forget())
+
+    def show_pairing_request_modal(self, sender_id, sender_name, peer_ip, trust_token):
+        try:
+            if hasattr(self, '_active_pairing_modal') and self._active_pairing_modal is not None:
+                try:
+                    if self._active_pairing_modal.winfo_exists():
+                        self._active_pairing_modal.destroy()
+                except Exception:
+                    pass
+
+            modal = ctk.CTkToplevel(self)
+            self._active_pairing_modal = modal
+            modal.title("SysNode - Solicitud de Vinculación")
+            modal.geometry("400x200")
+            modal.resizable(False, False)
+            modal.configure(fg_color="#141414")
+            modal.transient(self)
+            modal.lift()
+            modal.focus_force()
+            modal.attributes("-topmost", True)
+
+            def close_modal():
+                self._active_pairing_modal = None
+                modal.destroy()
+
+            modal.protocol("WM_DELETE_WINDOW", close_modal)
+
+            content = ctk.CTkFrame(modal, fg_color="transparent")
+            content.pack(fill="both", expand=True, padx=25, pady=20)
+
+            lbl_info = ctk.CTkLabel(
+                content,
+                text=f"El equipo '{sender_name}' ({peer_ip}) quiere vincularse contigo. ¿Aceptas?",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#FFFFFF",
+                wraplength=350,
+                justify="center"
+            )
+            lbl_info.pack(pady=(0, 20))
+
+            btn_frame = ctk.CTkFrame(content, fg_color="transparent")
+            btn_frame.pack(fill="x")
+
+            def respond(accepted):
+                self.core.respond_pairing(sender_id, accepted, trust_token)
+                close_modal()
+
+            btn_accept = ctk.CTkButton(
+                btn_frame, text="Aceptar", fg_color="#10B981", hover_color="#059669",
+                command=lambda: respond(True), width=120
+            )
+            btn_accept.pack(side="left", expand=True, padx=10)
+
+            btn_reject = ctk.CTkButton(
+                btn_frame, text="Rechazar", fg_color="#EF4444", hover_color="#DC2626",
+                command=lambda: respond(False), width=120
+            )
+            btn_reject.pack(side="right", expand=True, padx=10)
+            
+        except Exception as e:
+            logger.error(f"Error mostrando modal de vinculación: {e}")
 
     def show_terminal_pin_modal(self, sender_name, peer_ip, pin):
         try:

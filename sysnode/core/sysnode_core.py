@@ -53,10 +53,15 @@ class SysNodeCore:
             tcp_port=self.tcp_port,
             custom_name=self.node_name
         )
+        self.udp_beacon.stealth_mode = True  # Silent by default until user confirms
+        
         self.udp_listener = UDPListener(
             my_node_id=self.node_id,
             event_callback=self.broadcast_event
         )
+        
+        # Default to True so it doesn't process beacons while in login screen
+        self.udp_listener.stealth_mode = True
 
         # Servidor TCP para recepción de texto y comandos
         self.tcp_server = TCPServer(
@@ -64,7 +69,8 @@ class SysNodeCore:
             event_callback=self.broadcast_event,
             node_id=self.node_id,
             node_name=self.node_name,
-            download_dir_getter=self.get_downloads_dir
+            download_dir_getter=self.get_downloads_dir,
+            is_paired_checker=self.db.verify_device_trust
         )
         
         # Servidor HTTP de compartición (inicia apagado)
@@ -101,10 +107,14 @@ class SysNodeCore:
             node_id = event_dict.get("sender_id", "unknown")
             text = event_dict.get("text", "")
             msg_uuid = event_dict.get("msg_uuid")
+            peer_ip = event_dict.get("peer_ip")
+            sender_tcp_port = event_dict.get("sender_tcp_port")
             
             # Registrar dispositivo de paso si no existe o actualizar nombre
             sender_name = event_dict.get("sender_name", "Desconocido")
-            self.db.register_device(node_id, sender_name, "Unknown")
+            self.db.register_device(node_id, sender_name, "Unknown", ip=peer_ip, port=sender_tcp_port)
+            if peer_ip and sender_tcp_port:
+                self.add_manual_peer(peer_ip, sender_tcp_port)
             
             self.db.save_message(node_id, text, "IN", msg_uuid=msg_uuid)
             
@@ -131,11 +141,27 @@ class SysNodeCore:
             
             # Registrar dispositivo si no existe
             sender_name = event_dict.get("sender_name", "Desconocido")
-            self.db.register_device(node_id, sender_name, "Unknown")
+            peer_ip = event_dict.get("peer_ip")
+            sender_tcp_port = event_dict.get("sender_tcp_port")
+            self.db.register_device(node_id, sender_name, "Unknown", ip=peer_ip, port=sender_tcp_port)
+            if peer_ip and sender_tcp_port:
+                self.add_manual_peer(peer_ip, sender_tcp_port)
             
             # Guardamos el comando y su resultado como mensaje IN
             status_text = "[OK]" if success else "[FAIL]"
             self.db.save_message(node_id, f"CMD_RES:{status_text} Comando ejecutado: {cmd}\nResultado:\n{result}", "IN")
+
+        elif event_dict.get("event") == "PAIRING_RESPONSE_RECEIVED":
+            node_id = event_dict.get("sender_id", "unknown")
+            accepted = event_dict.get("accepted", False)
+            trust_token = event_dict.get("trust_token", "")
+            
+            if accepted and trust_token:
+                self.db.set_device_paired(node_id, True, trust_token)
+                logger.info(f"Dispositivo {node_id} aceptó la vinculación.")
+            else:
+                self.db.set_device_paired(node_id, False, None)
+                logger.warning(f"Dispositivo {node_id} rechazó la vinculación.")
             
         event_name = event_dict.get("event")
         if event_name in ["PEER_DISCOVERED", "PEER_UPDATED"]:
@@ -173,11 +199,13 @@ class SysNodeCore:
             return
             
         for msg_id, text, msg_uuid in pending:
-            success, _ = TCPClient.send_text(
+            trust_token = self.db.get_device_trust_token(node_id) or ""
+            success, response = TCPClient.send_text(
                 peer_ip=peer["ip"],
                 peer_port=peer["tcp_port"],
                 sender_id=self.node_id,
                 sender_name=self.node_name,
+                trust_token=trust_token,
                 text=text,
                 msg_uuid=msg_uuid
             )
@@ -185,6 +213,10 @@ class SysNodeCore:
                 self.db.mark_message_delivered(msg_id)
                 # Notificar a la UI
                 self.broadcast_event({"event": "MESSAGE_DELIVERED", "node_id": node_id, "msg_id": msg_id})
+            elif "NOT_PAIRED" in str(response):
+                logger.warning(f"Sincronización falló por falta de emparejamiento con {node_id}. Solicitando emparejamiento.")
+                self.request_pairing(node_id)
+                break  # Stop syncing if not paired
 
     def start(self) -> None:
         """Inicia los componentes de red del nodo (UDP y TCP)."""
@@ -218,6 +250,8 @@ class SysNodeCore:
         self.udp_beacon.stop()
         self.udp_listener.stop()
         self.tcp_server.stop()
+        if hasattr(self, 'http_server') and self.http_server:
+            self.http_server.stop()
 
         self._running = False
         logger.info("SysNodeCore detenido exitosamente.")
@@ -229,7 +263,7 @@ class SysNodeCore:
     def add_manual_peer(self, ip: str, port: int) -> None:
         """Añade manualmente un nodo a la red, intentando PING TCP para descubrirlo."""
         def ping_worker():
-            success, response = TCPClient.ping_node(ip, port, self.node_id, self.node_name)
+            success, response = TCPClient.ping_node(ip, port, self.node_id, self.node_name, sender_tcp_port=self.tcp_port)
             if success:
                 remote_node_id = response.get("node_id")
                 remote_hostname = response.get("hostname", f"Manual_{ip}")
@@ -266,13 +300,16 @@ class SysNodeCore:
             logger.info(f"Nodo {node_id} offline. Mensaje guardado como pendiente.")
             return True, "Mensaje guardado como pendiente (Nodo Offline).", msg_uuid
 
+        trust_token = self.db.get_device_trust_token(node_id) or ""
         success, response = TCPClient.send_text(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
+            trust_token=trust_token,
             text=text,
-            msg_uuid=msg_uuid
+            msg_uuid=msg_uuid,
+            sender_tcp_port=self.tcp_port
         )
         if success:
             self.db.register_device(node_id, peer["hostname"], peer.get("os", "Unknown"))
@@ -280,7 +317,12 @@ class SysNodeCore:
                 self.db.save_manual_peer(node_id, peer["ip"], peer["tcp_port"])
             self.db.save_message(node_id, text, "OUT", status="delivered", msg_uuid=msg_uuid)
         else:
-            self.db.save_message(node_id, text, "OUT", status="pending", msg_uuid=msg_uuid)
+            if "NOT_PAIRED" in str(response):
+                self.request_pairing(node_id)
+                self.db.save_message(node_id, text, "OUT", status="pending", msg_uuid=msg_uuid)
+                return False, "Requiere vinculación previa. Solicitud enviada.", msg_uuid
+            else:
+                self.db.save_message(node_id, text, "OUT", status="pending", msg_uuid=msg_uuid)
             
         return success, response, msg_uuid
 
@@ -293,14 +335,18 @@ class SysNodeCore:
         if not peer:
             return True, "Mensaje local actualizado (el nodo está offline, no se propagó)."
             
+        trust_token = self.db.get_device_trust_token(node_id) or ""
         success, response = TCPClient.edit_text(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
+            trust_token=trust_token,
             msg_uuid=msg_uuid,
             new_text=new_text
         )
+        if not success and "NOT_PAIRED" in str(response):
+            self.request_pairing(node_id)
         return success, response
         
     def start_sharing_server(self, port: int = 8080) -> str:
@@ -323,13 +369,19 @@ class SysNodeCore:
         # Save request to DB
         self.db.save_message(node_id, f"CMD_REQ:{command_key}", "OUT", status="delivered")
         
+        trust_token = self.db.get_device_trust_token(node_id) or ""
         success, msg = TCPClient.send_command(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
+            trust_token=trust_token,
             command_key=command_key
         )
+        
+        if not success and "NOT_PAIRED" in str(msg):
+            self.request_pairing(node_id)
+            msg = "Requiere vinculación previa. Solicitud enviada."
         
         # Save response to DB
         status_text = "[OK]" if success else "[FAIL]"
@@ -348,14 +400,20 @@ class SysNodeCore:
         # Save request to DB
         self.db.save_message(node_id, f"CMD_REQ:Bash -> {bash_command}", "OUT", status="delivered")
         
+        trust_token = self.db.get_device_trust_token(node_id) or ""
         success, msg = TCPClient.send_bash_command(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
+            trust_token=trust_token,
             bash_command=bash_command
         )
         
+        if not success and "NOT_PAIRED" in str(msg):
+            self.request_pairing(node_id)
+            msg = "Requiere vinculación previa. Solicitud enviada."
+
         # Save response to DB
         status_text = "[OK]" if success else "[FAIL]"
         self.db.save_message(node_id, f"CMD_RES:{status_text} {msg}", "IN", status="delivered")
@@ -369,17 +427,78 @@ class SysNodeCore:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
 
         peer = peers[node_id]
+        trust_token = self.db.get_device_trust_token(node_id) or ""
         success, msg = TCPClient.send_file(
             peer_ip=peer["ip"],
             peer_port=peer["tcp_port"],
             sender_id=self.node_id,
             sender_name=self.node_name,
+            trust_token=trust_token,
             file_path=file_path,
             progress_callback=progress_callback
         )
         if success:
             self.db.save_message(node_id, f"FILE:{file_path}", "OUT", status="delivered")
+        elif "NOT_PAIRED" in str(msg):
+            self.request_pairing(node_id)
+            msg = "Requiere vinculación previa. Solicitud enviada."
         return success, msg
+
+    def request_pairing(self, node_id: str) -> bool:
+        """Envía una solicitud de vinculación a un nodo."""
+        peers = self.get_active_peers()
+        if node_id not in peers:
+            return False
+            
+        import secrets
+        # Generar un token único y robusto
+        new_token = secrets.token_hex(32)
+        # Guardarlo localmente como temporal o actualizar el token directamente
+        # The true pairing only happens when the other accepts, but we need to send OUR token
+        # so they can save it.
+        # Enviar solicitud
+        peer = peers[node_id]
+        success, response = TCPClient.send_pairing_request(
+            peer_ip=peer["ip"],
+            peer_port=peer["tcp_port"],
+            sender_id=self.node_id,
+            sender_name=self.node_name,
+            trust_token=new_token,
+            sender_tcp_port=self.tcp_port
+        )
+        
+        if success:
+            # We save our generated token to use it later if they accept
+            # Actually, the logic is: we trust them using a token they give us, or we give them a token to trust us?
+            # It's better if they generate a token for us, or we just generate one and both use it.
+            # Let's use a single shared token for the pair.
+            # Save it temporarily or just save it directly (not fully paired yet until they respond).
+            # To avoid complexity, we can just save it with is_paired=False.
+            self.db.set_device_paired(node_id, False, new_token)
+            logger.info(f"Solicitud de vinculación enviada a {node_id}")
+            return True
+        return False
+
+    def respond_pairing(self, node_id: str, accepted: bool, peer_token: str) -> bool:
+        """Responde a una solicitud de vinculación."""
+        peers = self.get_active_peers()
+        if node_id not in peers:
+            return False
+            
+        if accepted:
+            self.db.set_device_paired(node_id, True, peer_token)
+            
+        peer = peers[node_id]
+        success, response = TCPClient.send_pairing_response(
+            peer_ip=peer["ip"],
+            peer_port=peer["tcp_port"],
+            sender_id=self.node_id,
+            sender_name=self.node_name,
+            trust_token=peer_token,
+            accepted=accepted,
+            sender_tcp_port=self.tcp_port
+        )
+        return success
 
     def is_running(self) -> bool:
         return self._running

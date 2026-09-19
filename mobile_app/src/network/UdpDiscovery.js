@@ -13,20 +13,28 @@ export class UdpDiscovery {
     
     this.socket = null;
     this.beaconInterval = null;
+    this.isStopping = false;
   }
 
   start() {
     if (this.socket) return;
+    this.isStopping = false;
 
     this.socket = dgram.createSocket({ type: 'udp4', reusePort: true });
 
     this.socket.bind(UDP_PORT, () => {
-      this.socket.setBroadcast(true);
-      console.log(`[UDP] Listening and Broadcasting on port ${UDP_PORT}`);
-      this._startBeacon();
+      if (this.isStopping || !this.socket) return;
+      try {
+        this.socket.setBroadcast(true);
+        console.log(`[UDP] Listening and Broadcasting on port ${UDP_PORT}`);
+        this._startBeacon();
+      } catch (e) {
+        console.warn('[UDP] Could not set broadcast on bound socket:', e.message);
+      }
     });
 
     this.socket.on('message', (msg, rinfo) => {
+      if (this.isStopping) return;
       try {
         const payload = JSON.parse(msg.toString('utf8'));
         
@@ -49,12 +57,16 @@ export class UdpDiscovery {
     });
 
     this.socket.on('error', (err) => {
+      if (this.isStopping) return;
       console.error('[UDP] Error:', err);
     });
   }
 
   _startBeacon() {
+    if (this.beaconInterval) clearInterval(this.beaconInterval);
     this.beaconInterval = setInterval(() => {
+      if (this.isStopping || !this.socket) return;
+
       const payload = JSON.stringify({
         type: 'SYSNODE_ANNOUNCE',
         node_id: this.nodeId,
@@ -67,13 +79,18 @@ export class UdpDiscovery {
       
       const buf = Buffer.from(payload);
       
-      this.socket.send(buf, 0, buf.length, UDP_PORT, BROADCAST_IP, (err) => {
-        if (err) console.error('[UDP] Beacon Send Error:', err);
-      });
+      try {
+        this.socket.send(buf, 0, buf.length, UDP_PORT, BROADCAST_IP, (err) => {
+          if (err && !this.isStopping) console.error('[UDP] Beacon Send Error:', err);
+        });
+      } catch (e) {
+        // Socket en proceso de cierre
+      }
     }, 3000); // 3 segundos, igual que en Python
   }
 
   stop() {
+    this.isStopping = true;
     if (this.beaconInterval) {
       clearInterval(this.beaconInterval);
       this.beaconInterval = null;
@@ -82,7 +99,7 @@ export class UdpDiscovery {
       try {
         this.socket.close();
       } catch (e) {
-        console.error('[UDP] Error closing socket:', e);
+        // Socket ya cerrado
       }
       this.socket = null;
       console.log('[UDP] Discovery Stopped');
