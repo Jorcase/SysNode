@@ -1939,23 +1939,7 @@ class SysNodeDesktopApp(ctk.CTk):
         
         self.after(2000, lambda: self.progress_bar.grid_forget()) # Ocultar barra despues de 2s
             
-    def on_node_select(self, node_id, hostname):
-        self.selected_node_id = node_id
-        self.chat_title.configure(text=f"{hostname}")
-        
-        # Remove unread badge if any
-        if node_id in getattr(self, 'unread_badges', {}):
-            self.unread_badges[node_id] = False
-            
-        for n_id, frame in self.node_buttons.items():
-            if n_id == node_id:
-                frame._select_btn.configure(fg_color="#2ECC71", text_color="black")
-            else:
-                frame._select_btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
-                
-        info = self.known_devices.get(node_id, {})
-        ip = info.get('ip')
-        port = info.get('tcp_port')
+
             
     def show_node_context_menu(self, event, node_id):
         import tkinter as tk
