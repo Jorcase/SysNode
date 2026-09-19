@@ -162,6 +162,12 @@ class SysNodeCore:
             else:
                 self.db.set_device_paired(node_id, False, None)
                 logger.warning(f"Dispositivo {node_id} rechazó la vinculación.")
+
+        elif event_dict.get("event") == "UNPAIR_REQUEST_RECEIVED":
+            node_id = event_dict.get("sender_id", "unknown")
+            sender_name = event_dict.get("sender_name", "unknown")
+            logger.info(f"El dispositivo {node_id} ({sender_name}) ha solicitado la desvinculación.")
+            self.db.set_device_paired(node_id, False, None)
             
         event_name = event_dict.get("event")
         if event_name in ["PEER_DISCOVERED", "PEER_UPDATED"]:
@@ -479,26 +485,59 @@ class SysNodeCore:
             return True
         return False
 
-    def respond_pairing(self, node_id: str, accepted: bool, peer_token: str) -> bool:
+    def respond_pairing(self, node_id: str, accepted: bool, peer_token: str) -> Tuple[bool, str]:
         """Responde a una solicitud de vinculación."""
         peers = self.get_active_peers()
         if node_id not in peers:
-            return False
-            
-        if accepted:
-            self.db.set_device_paired(node_id, True, peer_token)
-            
+            return False, "Nodo no encontrado."
+        
+        sender_id = node_id
         peer = peers[node_id]
-        success, response = TCPClient.send_pairing_response(
-            peer_ip=peer["ip"],
-            peer_port=peer["tcp_port"],
+        peer_ip = peer["ip"]
+        peer_port = peer["tcp_port"]
+        
+        from sysnode.network.tcp_client import TCPClient
+        
+        trust_token = None
+        if accepted:
+            import uuid
+            trust_token = str(uuid.uuid4())
+            self.db.set_device_paired(sender_id, True, trust_token)
+        else:
+            self.db.set_device_paired(sender_id, False, None)
+            
+        success, msg = TCPClient.send_pairing_response(
+            peer_ip=peer_ip,
+            peer_port=peer_port,
             sender_id=self.node_id,
             sender_name=self.node_name,
-            trust_token=peer_token,
+            trust_token=trust_token if accepted else "",
             accepted=accepted,
             sender_tcp_port=self.tcp_port
         )
-        return success
+        return success, msg
+
+    def unpair_device(self, peer_id: str) -> Tuple[bool, str]:
+        """Desvincula un dispositivo localmente y le notifica para que haga lo mismo."""
+        # 1. Desvincular localmente
+        self.db.set_device_paired(peer_id, False, None)
+        
+        # 2. Notificar al otro dispositivo si está online
+        peer_info = self.get_active_peers().get(peer_id)
+        if peer_info:
+            peer_ip = peer_info.get("ip")
+            peer_port = peer_info.get("tcp_port", 50001)
+            
+            from sysnode.network.tcp_client import TCPClient
+            success, msg = TCPClient.send_unpair_request(
+                peer_ip=peer_ip,
+                peer_port=peer_port,
+                sender_id=self.node_id,
+                sender_name=self.node_name,
+                sender_tcp_port=self.tcp_port
+            )
+            return success, msg
+        return True, "Desvinculado localmente (dispositivo no estaba online)."
 
     def is_running(self) -> bool:
         return self._running

@@ -19,6 +19,7 @@ class ActionType(str, Enum):
     TERM_CLOSE = "TERM_CLOSE"
     PAIRING_REQ = "PAIRING_REQ"
     PAIRING_RESP = "PAIRING_RESP"
+    UNPAIR_REQ = "UNPAIR_REQ"
     
 class PeerRole(str, Enum):
     SENDER = "SENDER"

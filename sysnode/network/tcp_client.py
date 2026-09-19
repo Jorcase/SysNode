@@ -80,16 +80,26 @@ class TCPClient:
 
     @staticmethod
     def send_pairing_response(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, accepted: bool, sender_tcp_port: int = None) -> Tuple[bool, str]:
-        """Envía la respuesta a una solicitud de vinculación."""
-        payload: Dict[str, Any] = {
+        """Envía respuesta (aceptada o rechazada) de vinculación a la otra PC."""
+        payload = {
             "action": ActionType.PAIRING_RESP,
             "sender_id": sender_id,
             "sender_name": sender_name,
-            "trust_token": trust_token if accepted else "",
+            "sender_tcp_port": sender_tcp_port or 50001,
+            "trust_token": trust_token,
             "accepted": accepted
         }
-        if sender_tcp_port:
-            payload["sender_tcp_port"] = sender_tcp_port
+        return TCPClient._connect_and_send(peer_ip, peer_port, payload)
+
+    @staticmethod
+    def send_unpair_request(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, sender_tcp_port: int = None) -> Tuple[bool, str]:
+        """Envía solicitud para desvincular a ambos extremos."""
+        payload = {
+            "action": ActionType.UNPAIR_REQ,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "sender_tcp_port": sender_tcp_port or 50001
+        }
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 
     @staticmethod

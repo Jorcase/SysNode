@@ -1964,7 +1964,7 @@ class SysNodeDesktopApp(ctk.CTk):
 
     def unpair_device(self, node_id):
         if messagebox.askyesno("Confirmar", "¿Seguro que querés desvincular este dispositivo? Ya no podrás comunicarte de forma segura hasta volver a vincularlo."):
-            self.core.db.set_device_paired(node_id, False, None)
+            self.core.unpair_device(node_id)
             if node_id in self.known_devices:
                 self.known_devices[node_id]['is_paired'] = 0
             self.append_to_chat(f"[Sistema] Has desvinculado al dispositivo {node_id}.", direction="OUT")
@@ -2142,6 +2142,19 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.append_to_chat(f"[Sistema] Vinculación aceptada por {sender_name}.", direction="IN")
             else:
                 self.append_to_chat(f"[Sistema] Vinculación rechazada por {sender_name}.", direction="IN")
+                
+            if self.selected_node_id == sender_id:
+                hostname = self.known_devices.get(sender_id, {}).get('hostname', sender_name)
+                self.on_node_select(sender_id, hostname)
+            return
+            
+        if etype == "UNPAIR_REQUEST_RECEIVED":
+            if sender_id in self.known_devices:
+                self.known_devices[sender_id]['is_paired'] = 0
+            self.append_to_chat(f"[Sistema] El dispositivo {sender_name} ha revocado la vinculación.", direction="IN")
+            if self.selected_node_id == sender_id:
+                hostname = self.known_devices.get(sender_id, {}).get('hostname', sender_name)
+                self.on_node_select(sender_id, hostname)
             return
 
         if etype == "TEXT_RECEIVED":

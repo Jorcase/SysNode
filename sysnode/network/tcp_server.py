@@ -130,8 +130,8 @@ class TCPClientHandlerThread(threading.Thread):
 
                 logger.info(f"Mensaje TCP Recibido | Acción: '{action}' | Emisor: {sender_name} ({self.peer_ip})")
 
-                # Verificar pairing para todas las acciones excepto PING, PAIRING_REQ y PAIRING_RESP
-                if action not in [ActionType.PING_NODE, ActionType.PAIRING_REQ, ActionType.PAIRING_RESP]:
+                # Verificar pairing para todas las acciones excepto PING, PAIRING_REQ, PAIRING_RESP, UNPAIR_REQ
+                if action not in [ActionType.PING_NODE, ActionType.PAIRING_REQ, ActionType.PAIRING_RESP, ActionType.UNPAIR_REQ]:
                     trust_token = payload.get("trust_token", "")
                     if self.is_paired_checker and not self.is_paired_checker(sender_id, trust_token):
                         logger.warning(f"🚨 ACCESO DENEGADO: Intento de acción '{action}' desde nodo no emparejado {sender_name} ({sender_id}).")
@@ -178,6 +178,18 @@ class TCPClientHandlerThread(threading.Thread):
                         "accepted": accepted
                     })
                     send_framed_message(self.client_sock, {"status": "OK", "msg": "Pairing response acknowledged."})
+                    break
+
+                # UNPAIR: Solicitud de Desvinculación
+                elif action == ActionType.UNPAIR_REQ:
+                    self.event_callback({
+                        "event": "UNPAIR_REQUEST_RECEIVED",
+                        "sender_id": sender_id,
+                        "sender_name": sender_name,
+                        "peer_ip": self.peer_ip,
+                        "sender_tcp_port": sender_tcp_port
+                    })
+                    send_framed_message(self.client_sock, {"status": "OK", "msg": "Unpaired."})
                     break
 
                 # Caso 1: Compartir Texto (Shared Board)
