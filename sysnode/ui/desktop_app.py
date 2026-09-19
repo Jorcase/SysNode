@@ -848,6 +848,22 @@ class SysNodeDesktopApp(ctk.CTk):
         self.btn_terminal = ctk.CTkButton(self.input_frame, image=self.icons.get('terminal'), text=" Terminal Remota", width=125, fg_color="#8E44AD", hover_color="#7D3C98", command=self.open_remote_terminal_window)
         self.btn_terminal.grid(row=1, column=4, padx=(0, 10), pady=(5, 10))
 
+        # Panel para dispositivos NO vinculados
+        self.unpaired_frame = ctk.CTkFrame(self.view_chat, fg_color="transparent")
+        
+        lbl_unpaired_icon = ctk.CTkLabel(self.unpaired_frame, text="🔒", font=ctk.CTkFont(size=48))
+        lbl_unpaired_icon.pack(pady=(40, 10))
+        
+        lbl_unpaired_title = ctk.CTkLabel(self.unpaired_frame, text="Dispositivo No Vinculado", font=ctk.CTkFont(size=20, weight="bold"))
+        lbl_unpaired_title.pack(pady=5)
+        
+        lbl_unpaired_desc = ctk.CTkLabel(self.unpaired_frame, text="Para enviar mensajes, archivos o comandos a este equipo,\nprimero debes enviar una solicitud de vinculación.", text_color="gray", justify="center")
+        lbl_unpaired_desc.pack(pady=(0, 20))
+        
+        self.btn_send_pairing = ctk.CTkButton(self.unpaired_frame, text="Vincular Dispositivo", width=200, height=40, font=ctk.CTkFont(size=14, weight="bold"),
+                                              command=self.send_pairing_req_from_ui)
+        self.btn_send_pairing.pack()
+
         # Progress bar oculta por defecto
         self.progress_bar = ctk.CTkProgressBar(self.view_chat)
         self.progress_bar.set(0)
@@ -857,6 +873,13 @@ class SysNodeDesktopApp(ctk.CTk):
         menu = tk.Menu(self, tearoff=0, bg="#2B2B2B", fg="white", activebackground="#34495E", activeforeground="white")
         menu.add_command(label="Ver perfil", command=self.show_remote_profile)
         menu.add_command(label="Vaciar chat", command=self.clear_current_chat)
+        
+        if self.selected_node_id:
+            info = self.known_devices.get(self.selected_node_id, {})
+            if info.get('is_paired'):
+                menu.add_separator()
+                menu.add_command(label="Desvincular", command=lambda: self.unpair_device(self.selected_node_id))
+                
         try:
             x = self.winfo_pointerx()
             y = self.winfo_pointery()
@@ -1356,7 +1379,8 @@ class SysNodeDesktopApp(ctk.CTk):
         self.selected_node_id = node_id
         logger.info(f"[UI] Dispositivo seleccionado: {hostname} ({node_id[:8]})")
         
-        self.chat_title.configure(text=f"{hostname}")
+        info = self.known_devices.get(node_id, {})
+        is_paired = info.get('is_paired', False)
         
         # Remove unread badge if any
         if node_id in getattr(self, 'unread_badges', {}):
@@ -1368,7 +1392,6 @@ class SysNodeDesktopApp(ctk.CTk):
             else:
                 frame._select_btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
                 
-        info = self.known_devices.get(node_id, {})
         os_type = info.get('os_type', '')
         os_lower = os_type.lower()
         is_mobile = any(k in os_lower for k in ["android", "ios", "iphone", "ipad", "mobile", "smartphone"])
@@ -1380,21 +1403,58 @@ class SysNodeDesktopApp(ctk.CTk):
             
         active_peers = self.core.get_active_peers()
         is_online = node_id in active_peers
-
-        if is_mobile:
-            self.btn_cmd.grid_remove() # Ocultar Comandos
-            if hasattr(self, 'btn_terminal'):
-                self.btn_terminal.grid_remove()
+        
+        # Actualizar título cabecera
+        if is_paired:
+            self.chat_title.configure(text=f"{hostname} (Vinculado)")
         else:
-            self.btn_cmd.grid() # Mostrar Comandos
-            if hasattr(self, 'btn_terminal'):
-                self.btn_terminal.grid()
-                if is_online:
-                    self.btn_terminal.configure(state="normal", fg_color="#8E44AD")
-                else:
-                    self.btn_terminal.configure(state="disabled", fg_color="#444444")
-                
-        self.load_chat_history(node_id)
+            self.chat_title.configure(text=f"{hostname} (No Vinculado)")
+        
+        if is_paired:
+            self.unpaired_frame.grid_remove()
+            self.chat_scroll.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
+            self.input_frame.grid(row=2, column=0, sticky="ew")
+            
+            if is_mobile:
+                self.btn_cmd.grid_remove()
+                if hasattr(self, 'btn_terminal'):
+                    self.btn_terminal.grid_remove()
+            else:
+                self.btn_cmd.grid()
+                if hasattr(self, 'btn_terminal'):
+                    self.btn_terminal.grid()
+                    if is_online:
+                        self.btn_terminal.configure(state="normal", fg_color="#8E44AD")
+                    else:
+                        self.btn_terminal.configure(state="disabled", fg_color="#444444")
+            self.load_chat_history(node_id)
+        else:
+            self.chat_scroll.grid_remove()
+            self.input_frame.grid_remove()
+            self.btn_send_pairing.configure(text="Vincular Dispositivo", state="normal")
+            self.unpaired_frame.grid(row=1, column=0, rowspan=2, sticky="nsew", pady=(0, 10))
+
+    def send_pairing_req_from_ui(self):
+        if not self.selected_node_id:
+            return
+            
+        active_peers = self.core.get_active_peers()
+        if self.selected_node_id not in active_peers:
+            messagebox.showwarning("Inactivo", "El dispositivo no está activo en este momento.")
+            return
+            
+        self.btn_send_pairing.configure(text="Esperando...", state="disabled")
+        
+        # Enviar petición en background
+        def do_req():
+            try:
+                self.core.request_pairing(self.selected_node_id)
+            except Exception as e:
+                logger.error(f"Error requesting pairing from UI: {e}")
+                self.after(0, lambda: self.btn_send_pairing.configure(text="Vincular Dispositivo", state="normal"))
+        
+        import threading
+        threading.Thread(target=do_req, daemon=True).start()
 
     def remove_manual_node(self, node_id):
         self.core.udp_listener.remove_manual_peer(node_id)
@@ -1660,6 +1720,7 @@ class SysNodeDesktopApp(ctk.CTk):
                     "action": "TERM_INIT",
                     "sender_id": self.core.node_id,
                     "sender_name": self.core.node_name,
+                    "trust_token": self.core.db.get_device_trust_token(self.selected_node_id) or "",
                     "cols": 80,
                     "rows": 24
                 })
@@ -1878,6 +1939,24 @@ class SysNodeDesktopApp(ctk.CTk):
         
         self.after(2000, lambda: self.progress_bar.grid_forget()) # Ocultar barra despues de 2s
             
+    def on_node_select(self, node_id, hostname):
+        self.selected_node_id = node_id
+        self.chat_title.configure(text=f"{hostname}")
+        
+        # Remove unread badge if any
+        if node_id in getattr(self, 'unread_badges', {}):
+            self.unread_badges[node_id] = False
+            
+        for n_id, frame in self.node_buttons.items():
+            if n_id == node_id:
+                frame._select_btn.configure(fg_color="#2ECC71", text_color="black")
+            else:
+                frame._select_btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
+                
+        info = self.known_devices.get(node_id, {})
+        ip = info.get('ip')
+        port = info.get('tcp_port')
+            
     def show_node_context_menu(self, event, node_id):
         import tkinter as tk
         
@@ -1890,10 +1969,6 @@ class SysNodeDesktopApp(ctk.CTk):
         items_added = False
         if is_manual:
             menu.add_command(label="Editar IP/Puerto", command=lambda: self.edit_manual_device(node_id))
-            items_added = True
-            
-        if info.get('is_paired'):
-            menu.add_command(label="Desvincular", command=lambda: self.unpair_device(node_id))
             items_added = True
 
         if not is_online:
@@ -1909,6 +1984,9 @@ class SysNodeDesktopApp(ctk.CTk):
             if node_id in self.known_devices:
                 self.known_devices[node_id]['is_paired'] = 0
             self.append_to_chat(f"[Sistema] Has desvinculado al dispositivo {node_id}.", direction="OUT")
+            if self.selected_node_id == node_id:
+                hostname = self.known_devices[node_id].get('hostname', '')
+                self.on_node_select(node_id, hostname)
 
     def delete_device(self, node_id, is_manual):
         if messagebox.askyesno("Confirmar", "¿Seguro que querés borrar este dispositivo?"):
@@ -1999,8 +2077,7 @@ class SysNodeDesktopApp(ctk.CTk):
                 device_icon = self.icons.get('laptop') if is_desktop else self.icons.get('smartphone')
                 
             is_paired = info.get('is_paired', False)
-            paired_mark = " 🔒" if is_paired else ""
-            display_text = f"{info['hostname']}{paired_mark}"
+            display_text = f"{info['hostname']}"
             
             if node_id not in self.node_buttons:
                 node_frame = ctk.CTkFrame(self.nodes_frame, fg_color="transparent")
@@ -2151,10 +2228,10 @@ class SysNodeDesktopApp(ctk.CTk):
 
             modal = ctk.CTkToplevel(self)
             self._active_pairing_modal = modal
-            modal.title("SysNode - Solicitud de Vinculación")
-            modal.geometry("400x200")
+            modal.title("Solicitud de Vinculación")
+            modal.geometry("450x250")
             modal.resizable(False, False)
-            modal.configure(fg_color="#141414")
+            modal.configure(fg_color="#1a1c23") # Darker elegant background
             modal.transient(self)
             modal.lift()
             modal.focus_force()
@@ -2167,17 +2244,20 @@ class SysNodeDesktopApp(ctk.CTk):
             modal.protocol("WM_DELETE_WINDOW", close_modal)
 
             content = ctk.CTkFrame(modal, fg_color="transparent")
-            content.pack(fill="both", expand=True, padx=25, pady=20)
+            content.pack(fill="both", expand=True, padx=30, pady=25)
+
+            # Icon or Indicator
+            icon_lbl = ctk.CTkLabel(content, text="🔒", font=ctk.CTkFont(size=40))
+            icon_lbl.pack(pady=(0, 10))
 
             lbl_info = ctk.CTkLabel(
                 content,
-                text=f"El equipo '{sender_name}' ({peer_ip}) quiere vincularse contigo. ¿Aceptas?",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="#FFFFFF",
-                wraplength=350,
+                text=f"El equipo '{sender_name}' ({peer_ip})\nquiere vincularse de forma segura contigo.",
+                font=ctk.CTkFont(size=15, weight="bold"),
+                text_color="#E0E0E0",
                 justify="center"
             )
-            lbl_info.pack(pady=(0, 20))
+            lbl_info.pack(pady=(0, 25))
 
             btn_frame = ctk.CTkFrame(content, fg_color="transparent")
             btn_frame.pack(fill="x")
@@ -2185,16 +2265,22 @@ class SysNodeDesktopApp(ctk.CTk):
             def respond(accepted):
                 self.core.respond_pairing(sender_id, accepted, trust_token)
                 close_modal()
-
+                if accepted:
+                    self.append_to_chat(f"[Sistema] Vinculaste exitosamente el dispositivo {sender_name}.")
+                    # Auto seleccionar el chat si es que no estaba en uno
+                    self.on_node_select(sender_id, sender_name)
+                    
             btn_accept = ctk.CTkButton(
                 btn_frame, text="Aceptar", fg_color="#10B981", hover_color="#059669",
-                command=lambda: respond(True), width=120
+                font=ctk.CTkFont(size=13, weight="bold"),
+                command=lambda: respond(True), width=130, height=35
             )
             btn_accept.pack(side="left", expand=True, padx=10)
 
             btn_reject = ctk.CTkButton(
                 btn_frame, text="Rechazar", fg_color="#EF4444", hover_color="#DC2626",
-                command=lambda: respond(False), width=120
+                font=ctk.CTkFont(size=13, weight="bold"),
+                command=lambda: respond(False), width=130, height=35
             )
             btn_reject.pack(side="right", expand=True, padx=10)
             
