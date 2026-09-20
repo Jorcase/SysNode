@@ -38,6 +38,27 @@ export default function ChatDetailScreen() {
   const flatListRef = useRef(null);
   const { identity } = useMyIdentity();
 
+  const [isPaired, setIsPaired] = useState(false);
+  const [trustToken, setTrustToken] = useState("");
+  const [hasLoadedPairing, setHasLoadedPairing] = useState(false);
+  const [isPairingRequested, setIsPairingRequested] = useState(false);
+
+  const checkPairingState = useCallback(async () => {
+    const targetNodeId = node.id || 'pc_desktop_node';
+    const paired = await MessageStorage.isDevicePaired(targetNodeId);
+    const token = await MessageStorage.getDeviceTrustToken(targetNodeId);
+    setIsPaired(paired);
+    setTrustToken(token || "");
+    setHasLoadedPairing(true);
+    if (paired) {
+      setIsPairingRequested(false);
+    }
+  }, [node.id]);
+
+  useEffect(() => {
+    checkPairingState();
+  }, [checkPairingState]);
+
   // Android Back Gesture Handler
   useEffect(() => {
     const backAction = () => {
@@ -115,9 +136,19 @@ export default function ChatDetailScreen() {
       MessageStorage.updateMessageText(targetNodeId, evt.msg_uuid, evt.new_text);
     });
 
+    const subPairingResp = DeviceEventEmitter.addListener('onPairingResponse', () => {
+      checkPairingState();
+    });
+
+    const subUnpair = DeviceEventEmitter.addListener('onUnpairRequest', () => {
+      checkPairingState();
+    });
+
     return () => {
       subMsg.remove();
       subEdit.remove();
+      subPairingResp.remove();
+      subUnpair.remove();
     };
   }, [node.id]);
 
@@ -155,7 +186,9 @@ export default function ChatDetailScreen() {
       MessageStorage.updateMessageText(targetNodeId, targetMsgId, updatedText);
 
       if (!clientRef.current) {
-        clientRef.current = new TcpClient(node.ip, node.tcp_port);
+        clientRef.current = new TcpClient(node.ip, node.tcp_port, trustToken);
+      } else {
+        clientRef.current.trustToken = trustToken;
       }
 
       clientRef.current.connect(
@@ -189,7 +222,9 @@ export default function ChatDetailScreen() {
     setMessageText('');
 
     if (!clientRef.current) {
-      clientRef.current = new TcpClient(node.ip, node.tcp_port);
+      clientRef.current = new TcpClient(node.ip, node.tcp_port, trustToken);
+    } else {
+      clientRef.current.trustToken = trustToken;
     }
 
     clientRef.current.connect(
@@ -239,7 +274,9 @@ export default function ChatDetailScreen() {
     MessageStorage.saveMessage(targetNodeId, newMsg);
 
     if (!clientRef.current) {
-      clientRef.current = new TcpClient(node.ip, node.tcp_port);
+      clientRef.current = new TcpClient(node.ip, node.tcp_port, trustToken);
+    } else {
+      clientRef.current.trustToken = trustToken;
     }
 
     try {
@@ -348,7 +385,9 @@ export default function ChatDetailScreen() {
     MessageStorage.saveMessage(targetNodeId, reqMsg);
 
     if (!clientRef.current) {
-      clientRef.current = new TcpClient(node.ip, node.tcp_port);
+      clientRef.current = new TcpClient(node.ip, node.tcp_port, trustToken);
+    } else {
+      clientRef.current.trustToken = trustToken;
     }
 
     clientRef.current.connect(
@@ -454,57 +493,112 @@ export default function ChatDetailScreen() {
           </View>
         )}
 
-        {/* Área de Mensajes */}
-        <FlatList 
-          ref={flatListRef}
-          data={messages}
-          inverted={true}
-          keyExtractor={item => item.id}
-          className="flex-1 bg-gray-50 dark:bg-[#0b0c10]"
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 12 }}
-          onEndReached={loadMoreHistory}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={hasMoreHistory ? (
-            <View className="py-4">
-              <Text className="text-xs text-blue-500 font-semibold text-center">
-                Cargando...
+        {/* Área Principal (Chat o Vinculación) */}
+        {!hasLoadedPairing ? (
+          <View className="flex-1 justify-center items-center bg-gray-50 dark:bg-[#0b0c10]">
+            <Text className="text-gray-500 dark:text-gray-400">Cargando estado...</Text>
+          </View>
+        ) : !isPaired ? (
+          <View className="flex-1 justify-center items-center bg-gray-50 dark:bg-[#0b0c10] px-6">
+            <View className="bg-white dark:bg-[#1e2128] p-6 rounded-2xl w-full max-w-sm items-center shadow-sm">
+              <View className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full items-center justify-center mb-4">
+                <Ionicons name="lock-closed" size={32} color="#3b82f6" />
+              </View>
+              <Text className="text-lg font-bold text-black dark:text-white mb-2 text-center">Dispositivo No Vinculado</Text>
+              <Text className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">
+                {isPairingRequested 
+                  ? "Esperando a que el otro dispositivo acepte la solicitud de vinculación..." 
+                  : "Por seguridad, debes vincular este dispositivo antes de poder chatear o enviar comandos."}
               </Text>
+              
+              <TouchableOpacity 
+                className={`w-full py-3 rounded-xl flex-row justify-center items-center ${isPairingRequested ? 'bg-gray-400 dark:bg-gray-600' : 'bg-blue-600 active:bg-blue-700'}`}
+                disabled={isPairingRequested}
+                onPress={async () => {
+                  setIsPairingRequested(true);
+                  try {
+                    await TcpClient.sendPairingRequest(
+                      node.ip, 
+                      node.tcp_port, 
+                      identity?.node_id || "mobile-id", 
+                      identity?.node_name || "Celular",
+                      global.myTcpPort || 50001,
+                      ""
+                    );
+                    // The wait is handled by listening to DeviceEventEmitter
+                  } catch (e) {
+                    console.log("Error solicitando vinculación:", e);
+                    Alert.alert("Error", "No se pudo enviar la solicitud de vinculación.");
+                    setIsPairingRequested(false);
+                  }
+                }}
+              >
+                {isPairingRequested ? (
+                  <Text className="text-white font-bold">Esperando...</Text>
+                ) : (
+                  <>
+                    <Ionicons name="link" size={18} color="white" className="mr-2" />
+                    <Text className="text-white font-bold ml-2">Vincular Dispositivo</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
-          ) : null}
-          renderItem={({ item }) => (
-            <ChatBubble 
-              message={item} 
-              onLongPress={handleMessageLongPress} 
-              onOpenMedia={(uri) => {
-                setSelectedMediaUri(uri);
-                setShowMediaViewerModal(true);
-              }}
+          </View>
+        ) : (
+          <>
+            {/* Área de Mensajes */}
+            <FlatList 
+              ref={flatListRef}
+              data={messages}
+              inverted={true}
+              keyExtractor={item => item.id}
+              className="flex-1 bg-gray-50 dark:bg-[#0b0c10]"
+              contentContainerStyle={{ paddingTop: 12, paddingBottom: 12 }}
+              onEndReached={loadMoreHistory}
+              onEndReachedThreshold={0.5}
+              ListFooterComponent={hasMoreHistory ? (
+                <View className="py-4">
+                  <Text className="text-xs text-blue-500 font-semibold text-center">
+                    Cargando...
+                  </Text>
+                </View>
+              ) : null}
+              renderItem={({ item }) => (
+                <ChatBubble 
+                  message={item} 
+                  onLongPress={handleMessageLongPress} 
+                  onOpenMedia={(uri) => {
+                    setSelectedMediaUri(uri);
+                    setShowMediaViewerModal(true);
+                  }}
+                />
+              )}
             />
-          )}
-        />
 
-        {/* Cajón de Input */}
-        <View className="p-2 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1e2128] flex-row items-center">
-          <TouchableOpacity className="p-2" onPress={() => setShowAttachMenu(true)}>
-            <Ionicons name="add" size={24} color="#3b82f6" />
-          </TouchableOpacity>
-          
-          <TextInput 
-            className="flex-1 bg-gray-100 dark:bg-[#2a2d36] text-black dark:text-white rounded-md mx-2 px-3 py-1.5 max-h-28 min-h-[36px] text-sm"
-            placeholder="Escribí un mensaje..."
-            placeholderTextColor="#9ca3af"
-            multiline
-            value={messageText}
-            onChangeText={setMessageText}
-          />
-          
-          <TouchableOpacity 
-            className={`w-9 h-9 rounded-md items-center justify-center ${messageText.trim().length > 0 ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`}
-            onPress={handleSend}
-          >
-            <Ionicons name="send" size={16} color="white" style={{ marginLeft: 2 }} />
-          </TouchableOpacity>
-        </View>
+            {/* Cajón de Input */}
+            <View className="p-2 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1e2128] flex-row items-center">
+              <TouchableOpacity className="p-2" onPress={() => setShowAttachMenu(true)}>
+                <Ionicons name="add" size={24} color="#3b82f6" />
+              </TouchableOpacity>
+              
+              <TextInput 
+                className="flex-1 bg-gray-100 dark:bg-[#2a2d36] text-black dark:text-white rounded-md mx-2 px-3 py-1.5 max-h-28 min-h-[36px] text-sm"
+                placeholder="Escribí un mensaje..."
+                placeholderTextColor="#9ca3af"
+                multiline
+                value={messageText}
+                onChangeText={setMessageText}
+              />
+              
+              <TouchableOpacity 
+                className={`w-9 h-9 rounded-md items-center justify-center ${messageText.trim().length > 0 ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`}
+                onPress={handleSend}
+              >
+                <Ionicons name="send" size={16} color="white" style={{ marginLeft: 2 }} />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </KeyboardAvoidingView>
 
       {/* Modal Opciones de Mensaje (Reemplazo de Alert.alert para evitar límite de Android) */}
@@ -658,6 +752,42 @@ export default function ChatDetailScreen() {
             >
               <Ionicons name="person-outline" size={18} color="#3b82f6" className="mr-3" />
               <Text className="text-sm text-black dark:text-white font-medium ml-2">Ver perfil</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              className="py-3 border-b border-gray-100 dark:border-gray-800 flex-row items-center px-2"
+              onPress={() => {
+                setShowOptionsMenu(false);
+                Alert.alert(
+                  "Desvincular",
+                  "¿Seguro que quieres desvincular este dispositivo?",
+                  [
+                    { text: "Cancelar", style: "cancel" },
+                    { text: "Desvincular", style: "destructive", onPress: async () => {
+                        const targetNodeId = node.id || 'pc_desktop_node';
+                        
+                        await MessageStorage.setDevicePaired(targetNodeId, false, null);
+                        checkPairingState();
+                        setIsPairingRequested(false);
+                        
+                        try {
+                          await TcpClient.sendUnpairRequest(
+                            node.ip, 
+                            node.tcp_port, 
+                            identity?.node_id || "mobile-id", 
+                            identity?.node_name || "Celular",
+                            global.myTcpPort || 50001
+                          );
+                        } catch (e) {
+                          console.log("Error al enviar UNPAIR_REQ al remoto:", e);
+                        }
+                    }}
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="link-outline" size={18} color="#ef4444" className="mr-3" />
+              <Text className="text-sm text-red-500 font-medium ml-2">Desvincular dispositivo</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 

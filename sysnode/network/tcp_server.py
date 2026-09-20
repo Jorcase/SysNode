@@ -108,6 +108,7 @@ class TCPClientHandlerThread(threading.Thread):
     def run(self) -> None:
         keep_socket_open = False
         active_session_id = None
+        socket_authenticated = False
         try:
             self.client_sock.settimeout(10.0)  # Timeout de inactividad por socket
             while True:
@@ -131,12 +132,14 @@ class TCPClientHandlerThread(threading.Thread):
                 logger.info(f"Mensaje TCP Recibido | Acción: '{action}' | Emisor: {sender_name} ({self.peer_ip})")
 
                 # Verificar pairing para todas las acciones excepto PING, PAIRING_REQ, PAIRING_RESP, UNPAIR_REQ
-                if action not in [ActionType.PING_NODE, ActionType.PAIRING_REQ, ActionType.PAIRING_RESP, ActionType.UNPAIR_REQ]:
+                if not socket_authenticated and action not in [ActionType.PING_NODE, ActionType.PAIRING_REQ, ActionType.PAIRING_RESP, ActionType.UNPAIR_REQ]:
                     trust_token = payload.get("trust_token", "")
                     if self.is_paired_checker and not self.is_paired_checker(sender_id, trust_token):
                         logger.warning(f"🚨 ACCESO DENEGADO: Intento de acción '{action}' desde nodo no emparejado {sender_name} ({sender_id}).")
                         send_framed_message(self.client_sock, {"status": "ERROR", "msg": "NOT_PAIRED"})
                         break
+                    else:
+                        socket_authenticated = True
 
                 # Caso 0: Ping Node (para conexiones manuales)
                 if action == ActionType.PING_NODE:
@@ -324,42 +327,27 @@ class TCPClientHandlerThread(threading.Thread):
 
                 # Caso 4: Terminal Remota (SSH-Style PTY)
                 elif action == ActionType.TERM_INIT:
-                    self.client_sock.settimeout(120.0)  # Ampliar timeout a 2 minutos para el flujo de PIN/terminal
                     from sysnode.network.terminal_server import terminal_manager
                     cols = payload.get("cols", 80)
                     rows = payload.get("rows", 24)
-                    session_id, pin = terminal_manager.create_session(self.client_sock, cols, rows)
-                    active_session_id = session_id
-                    keep_socket_open = True
+                    session_id, _ = terminal_manager.create_session(self.client_sock, cols, rows)
                     
-                    self.event_callback({
-                        "event": "TERMINAL_PIN_REQUEST",
-                        "session_id": session_id,
-                        "pin": pin,
-                        "sender_name": sender_name,
-                        "peer_ip": self.peer_ip
-                    })
-                    
-                    send_framed_message(self.client_sock, {
-                        "status": "PIN_REQUIRED",
-                        "session_id": session_id,
-                        "msg": f"Ingresá el código PIN desplegado en {self.node_name} para habilitar la terminal."
-                    })
-
-                elif action == ActionType.TERM_AUTH:
-                    from sysnode.network.terminal_server import terminal_manager
-                    session_id = payload.get("session_id", "")
-                    pin = payload.get("pin", "")
-                    success = terminal_manager.authenticate_session(session_id, pin)
-                    send_framed_message(self.client_sock, {
-                        "status": "OK" if success else "ERROR",
-                        "session_id": session_id,
-                        "msg": "Sesión Terminal autenticada e iniciada." if success else "PIN inválido."
-                    })
-                    if success:
-                        keep_socket_open = True
-                        active_session_id = session_id
+                    session = terminal_manager.sessions.get(session_id)
+                    if session:
+                        session.authenticated = True
+                        success = session.start_shell()
+                        send_framed_message(self.client_sock, {
+                            "status": "OK" if success else "ERROR",
+                            "session_id": session_id,
+                            "msg": "Sesión Terminal autenticada e iniciada." if success else "Error iniciando PTY."
+                        })
+                        if success:
+                            keep_socket_open = True
+                            active_session_id = session_id
+                        else:
+                            break
                     else:
+                        send_framed_message(self.client_sock, {"status": "ERROR", "msg": "Error interno al crear sesión PTY."})
                         break
 
                 elif action == ActionType.TERM_STDIN:

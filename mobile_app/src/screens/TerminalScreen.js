@@ -51,7 +51,10 @@ export default function TerminalScreen({ route, navigation }) {
     try {
       appendOutput(`[SYSNODE] Conectando a Terminal Remota en ${node.hostname || node.ip} (${node.ip}:${node.tcp_port})...\n`);
 
-      const client = new TcpClient(node.ip, node.tcp_port);
+      const { MessageStorage } = require('../network/MessageStorage');
+      const trustToken = await MessageStorage.getDeviceTrustToken(node.id || 'pc_desktop_node');
+
+      const client = new TcpClient(node.ip, node.tcp_port, trustToken || "");
       tcpClientRef.current = client;
 
       client.connect(
@@ -66,12 +69,13 @@ export default function TerminalScreen({ route, navigation }) {
               rows: 24
             });
 
-            if (response && response.status === 'PIN_REQUIRED') {
+            if (response && response.status === 'OK') {
               setSessionId(response.session_id);
-              appendOutput(`[SYSNODE] Requerida autorización. Ingrese el código PIN de 6 dígitos desplegado en la PC.\n`);
-              setPinModalVisible(true);
+              setConnected(true);
+              setTerminalOutput([]);
+              listenToStdout();
             } else {
-              appendOutput(`[ERROR] El nodo remoto no aceptó la sesión terminal.\n`);
+              appendOutput(`[ERROR] El nodo remoto rechazó la sesión terminal: ${response?.msg || 'Error desconocido'}\n`);
             }
           } catch (e) {
             appendOutput(`[ERROR] Fallo al negociar la sesión terminal: ${e.message}\n`);
@@ -87,36 +91,6 @@ export default function TerminalScreen({ route, navigation }) {
       );
     } catch (e) {
       appendOutput(`[ERROR] Excepción: ${e.message}\n`);
-    }
-  };
-
-  // Enviar el PIN ingresado por el usuario en el celular
-  const handleAuthPin = async () => {
-    if (!pinInput || pinInput.length < 6) {
-      Alert.alert('PIN Inválido', 'Por favor ingresá un código PIN de 6 dígitos.');
-      return;
-    }
-
-    try {
-      const response = await tcpClientRef.current.sendMessageWithResponse({
-        action: 'TERM_AUTH',
-        session_id: sessionId,
-        pin: pinInput
-      });
-
-      if (response && response.status === 'OK') {
-        setPinModalVisible(false);
-        setConnected(true);
-        // Limpiamos los logs internos de conexión para dejar la consola limpia (solo con el bash prompt)
-        setTerminalOutput([]);
-        
-        // Escuchar streaming continuo de STDOUT
-        listenToStdout();
-      } else {
-        Alert.alert('PIN Incisivo / Error', response?.msg || 'El PIN ingresado es incorrecto.');
-      }
-    } catch (e) {
-      Alert.alert('Error', `Fallo al verificar el PIN: ${e.message}`);
     }
   };
 
@@ -274,46 +248,6 @@ export default function TerminalScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-
-      {/* Modal de PIN Authorization */}
-      <Modal visible={pinModalVisible} transparent animationType="fade">
-        <View className="flex-1 bg-black/80 justify-center items-center p-6">
-          <View className="bg-[#1e2128] w-full max-w-sm p-6 rounded-2xl border border-gray-800">
-            <View className="items-center mb-4">
-              <Ionicons name="key-outline" size={40} color="#3b82f6" />
-              <Text className="text-white text-xl font-bold mt-2 text-center">Autorización de Terminal</Text>
-              <Text className="text-gray-400 text-sm text-center mt-1">
-                Ingresá el código PIN de 6 dígitos desplegado en la pantalla de {node?.hostname || node?.ip}:
-              </Text>
-            </View>
-
-            <TextInput
-              className="bg-black/50 text-white font-mono text-center text-2xl font-bold p-3 rounded-xl border border-gray-700 tracking-widest mb-6"
-              value={pinInput}
-              onChangeText={setPinInput}
-              keyboardType="number-pad"
-              maxLength={6}
-              placeholder="000000"
-              placeholderTextColor="#4b5563"
-            />
-
-            <View className="flex-row space-x-3">
-              <TouchableOpacity 
-                onPress={() => { setPinModalVisible(false); navigation.goBack(); }}
-                className="flex-1 bg-gray-800 py-3 rounded-xl"
-              >
-                <Text className="text-gray-300 font-bold text-center">Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleAuthPin}
-                className="flex-1 bg-blue-600 py-3 rounded-xl ml-2"
-              >
-                <Text className="text-white font-bold text-center">Conectar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }

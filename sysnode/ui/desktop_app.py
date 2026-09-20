@@ -1726,54 +1726,14 @@ class SysNodeDesktopApp(ctk.CTk):
                 })
 
                 resp = receive_framed_message(s)
-                if not resp or resp.get("status") != "PIN_REQUIRED":
+                if not resp or resp.get("status") != "OK":
                     try: s.close()
                     except: pass
-                    self.after(0, lambda: messagebox.showerror("Error de Conexión", f"El nodo remoto {hostname} no aceptó la solicitud de terminal."))
+                    err_msg = resp.get("msg", "Error iniciando sesión terminal remota.") if resp else "Sin respuesta del host remoto."
+                    self.after(0, lambda: messagebox.showwarning("Acceso Denegado", err_msg))
                     return
 
                 session_id = resp.get("session_id")
-
-                # Solicitar PIN al usuario mediante diálogo emergente en el hilo principal
-                pin_container = {"pin": None, "done": threading.Event()}
-                def ask_pin_gui():
-                    try:
-                        dialog = ctk.CTkInputDialog(
-                            text=f"Ingresá el PIN de 6 dígitos desplegado en la pantalla de {hostname}:",
-                            title="Autorización de Terminal Remota"
-                        )
-                        pin_container["pin"] = dialog.get_input()
-                    except Exception as ex:
-                        logger.error(f"Error dialog PIN: {ex}")
-                    finally:
-                        pin_container["done"].set()
-
-                self.after(0, ask_pin_gui)
-                pin_container["done"].wait(timeout=120.0)
-                pin_code = pin_container["pin"]
-
-                if not pin_code:
-                    try:
-                        send_framed_message(s, {"action": "TERM_CLOSE", "session_id": session_id})
-                        s.close()
-                    except: pass
-                    return
-
-                # Enviar solicitud de autenticación con el PIN
-                send_framed_message(s, {
-                    "action": "TERM_AUTH",
-                    "session_id": session_id,
-                    "pin": pin_code.strip()
-                })
-
-                auth_resp = receive_framed_message(s)
-                if not auth_resp or auth_resp.get("status") != "OK":
-                    try: s.close()
-                    except: pass
-                    err_msg = auth_resp.get("msg", "PIN de autorización inválido o expirado.") if auth_resp else "Sin respuesta del host remoto."
-                    self.after(0, lambda: messagebox.showwarning("Acceso Denegado", f"No se pudo autorizar la terminal remota: {err_msg}"))
-                    return
-
                 # Autenticación aprobada: abrir interfaz de terminal con el socket activo
                 self.after(0, lambda: self.launch_active_terminal_ui(s, session_id, ip, port, hostname))
 

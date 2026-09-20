@@ -2,9 +2,10 @@ import TcpSocket from 'react-native-tcp-socket';
 import { createFramedMessage } from './Protocol';
 
 export class TcpClient {
-  constructor(ip, port) {
+  constructor(ip, port, trustToken = "") {
     this.ip = ip;
     this.port = port;
+    this.trustToken = trustToken;
     this.client = null;
     this.isConnected = false;
   }
@@ -49,6 +50,9 @@ export class TcpClient {
         if (global.myTcpPort && typeof payloadObj === 'object') {
           payloadObj.sender_tcp_port = global.myTcpPort;
         }
+        if (this.trustToken && typeof payloadObj === 'object' && !payloadObj.trust_token) {
+          payloadObj.trust_token = this.trustToken;
+        }
         const framedBuffer = createFramedMessage(payloadObj);
         this.client.write(framedBuffer, (err) => {
           if (err) {
@@ -91,6 +95,9 @@ export class TcpClient {
       try {
         if (global.myTcpPort && typeof payloadObj === 'object') {
           payloadObj.sender_tcp_port = global.myTcpPort;
+        }
+        if (this.trustToken && typeof payloadObj === 'object' && !payloadObj.trust_token) {
+          payloadObj.trust_token = this.trustToken;
         }
         const framedBuffer = createFramedMessage(payloadObj);
         this.client.write(framedBuffer, (err) => {
@@ -156,7 +163,8 @@ export class TcpClient {
               sender_name: senderName,
               filename: filename,
               filesize_bytes: filesize,
-              sha256: fileSha256
+              sha256: fileSha256,
+              trust_token: this.trustToken || ""
             };
 
             const framedMeta = createFramedMessage(metaPayload);
@@ -178,8 +186,68 @@ export class TcpClient {
   disconnect() {
     if (this.client) {
       this.client.destroy();
-      this.client = null;
       this.isConnected = false;
+      this.client = null;
     }
+  }
+
+  // --- MÉTODOS ESTÁTICOS PARA VINCULACIÓN Y AUTENTICACIÓN ---
+  static _connectAndSend(ip, port, payload) {
+    return new Promise((resolve) => {
+      const client = TcpSocket.createConnection({
+        port: port,
+        host: ip,
+        timeout: 3000,
+      }, () => {
+        try {
+          const framedBuffer = createFramedMessage(payload);
+          client.write(framedBuffer, (err) => {
+            if (err) resolve({ success: false, msg: err.toString() });
+            else resolve({ success: true, msg: "Enviado correctamente" });
+            client.destroy();
+          });
+        } catch (e) {
+          resolve({ success: false, msg: e.toString() });
+          client.destroy();
+        }
+      });
+
+      client.on('error', (err) => {
+        resolve({ success: false, msg: err.toString() });
+      });
+    });
+  }
+
+  static async sendPairingRequest(peerIp, peerPort, senderId, senderName, senderTcpPort, trustToken) {
+    const payload = {
+      action: "PAIRING_REQ",
+      sender_id: senderId,
+      sender_name: senderName,
+      sender_tcp_port: senderTcpPort || 50001,
+      trust_token: trustToken || ""
+    };
+    return await TcpClient._connectAndSend(peerIp, peerPort, payload);
+  }
+
+  static async sendPairingResponse(peerIp, peerPort, senderId, senderName, trustToken, accepted, senderTcpPort) {
+    const payload = {
+      action: "PAIRING_RESP",
+      sender_id: senderId,
+      sender_name: senderName,
+      sender_tcp_port: senderTcpPort || 50001,
+      trust_token: trustToken || "",
+      accepted: accepted
+    };
+    return await TcpClient._connectAndSend(peerIp, peerPort, payload);
+  }
+
+  static async sendUnpairRequest(peerIp, peerPort, senderId, senderName, senderTcpPort) {
+    const payload = {
+      action: "UNPAIR_REQ",
+      sender_id: senderId,
+      sender_name: senderName,
+      sender_tcp_port: senderTcpPort || 50001
+    };
+    return await TcpClient._connectAndSend(peerIp, peerPort, payload);
   }
 }

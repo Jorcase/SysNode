@@ -94,6 +94,53 @@ export default function ChatsScreen() {
         await MessageStorage.saveMessage(senderId, newMsg);
         refreshLatestMessages();
         DeviceEventEmitter.emit('onChatMessageReceived', { ...payload, senderId, message: newMsg });
+      } else if (payload.type === 'PAIRING_REQ') {
+        Alert.alert(
+          "Vinculación Segura",
+          `${payload.sender} (${payload.peer_ip}) quiere vincularse de forma segura contigo.`,
+          [
+            { 
+              text: "Rechazar", 
+              style: "cancel",
+              onPress: async () => {
+                await TcpClient.sendPairingResponse(
+                  payload.peer_ip,
+                  payload.sender_tcp_port || 50001,
+                  identity?.node_id || "mobile-id",
+                  identity?.node_name || "Celular",
+                  "", 
+                  false,
+                  global.myTcpPort || 50001
+                );
+              }
+            },
+            {
+              text: "Aceptar",
+              style: "default",
+              onPress: async () => {
+                try {
+                  await MessageStorage.setDevicePaired(payload.sender_id, true, payload.trust_token);
+                  DeviceEventEmitter.emit('onPairingResponse', { sender_id: payload.sender_id });
+                  await TcpClient.sendPairingResponse(
+                    payload.peer_ip,
+                    payload.sender_tcp_port || 50001,
+                    identity?.node_id || "mobile-id",
+                    identity?.node_name || "Celular",
+                    payload.trust_token, 
+                    true,
+                    global.myTcpPort || 50001
+                  );
+                } catch (e) {
+                  console.log("Error aceptando vinculación:", e);
+                }
+              }
+            }
+          ]
+        );
+      } else if (payload.type === 'PAIRING_RESP') {
+        DeviceEventEmitter.emit('onPairingResponse', payload);
+      } else if (payload.type === 'UNPAIR_REQ') {
+        DeviceEventEmitter.emit('onUnpairRequest', payload);
       } else {
         DeviceEventEmitter.emit('onChatMessageReceived', payload);
       }

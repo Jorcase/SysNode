@@ -134,7 +134,7 @@ export class TcpServer {
     const senderName = payload.sender_name || "Unknown";
     const { MessageStorage } = require('./MessageStorage');
 
-    if (action !== "PING_NODE" && action !== "PAIRING_REQ" && action !== "PAIRING_RESP") {
+    if (action !== "PING_NODE" && action !== "PAIRING_REQ" && action !== "PAIRING_RESP" && action !== "UNPAIR_REQ") {
       const trustToken = payload.trust_token || "";
       const isTrusted = await MessageStorage.verifyDeviceTrust(senderId, trustToken);
       if (!isTrusted) {
@@ -180,6 +180,21 @@ export class TcpServer {
         });
       }
       this._sendAck(socket, { status: "OK", msg: "Pairing response acknowledged." });
+    }
+    else if (action === "UNPAIR_REQ") {
+      await MessageStorage.setDevicePaired(senderId, false, null);
+      console.log(`[TCP Server] El dispositivo ${senderId} ha revocado la vinculación.`);
+      
+      if (this.onMessageReceived) {
+        this.onMessageReceived({
+          type: "UNPAIR_REQ",
+          sender: senderName,
+          sender_id: senderId,
+          peer_ip: socket.remoteAddress,
+          ...payload
+        });
+      }
+      this._sendAck(socket, { status: "OK", msg: "Unpaired." });
     }
     else if (action === "SHARE_TEXT") {
       if (this.onMessageReceived) {
