@@ -256,10 +256,11 @@ class TCPClientHandlerThread(threading.Thread):
 
                 elif action == ActionType.REMOTE_BASH_CMD:
                     bash_command = payload.get("bash_command", "")
-                    logger.info(f"Solicitud de comando BASH: '{bash_command}' enviado por {sender_name}")
+                    is_bg = payload.get("is_background", False)
+                    logger.info(f"Solicitud de comando BASH: '{bash_command}' enviado por {sender_name} (Background: {is_bg})")
 
                     from sysnode.core.security import execute_custom_bash_command
-                    success, result_msg = execute_custom_bash_command(bash_command, receiver_name=self.node_name)
+                    success, result_msg = execute_custom_bash_command(bash_command, receiver_name=self.node_name, is_background=is_bg)
 
                     self.event_callback({
                         "event": "COMMAND_RECEIVED",
