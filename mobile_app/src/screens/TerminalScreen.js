@@ -126,6 +126,7 @@ export default function TerminalScreen({ route, navigation }) {
   const appendOutput = (text) => {
     // Sanitizar códigos ANSI agresivamente
     let cleanText = text
+      .replace(/\r\n/g, '\n')                     // Normalizar CRLF a LF primero
       .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')     // CSI
       .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '') // OSC
       .replace(/\x1b[=>]/g, '')                   // Modos

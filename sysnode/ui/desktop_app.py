@@ -1813,6 +1813,7 @@ class SysNodeDesktopApp(ctk.CTk):
                     if term_text.index("insert") != term_text.index("insert linestart"):
                         term_text.delete("insert-1c")
                 elif char == '\n':
+                    term_text.mark_set("insert", "insert lineend")
                     term_text.insert("insert", "\n")
                 else:
                     if term_text.index("insert") != term_text.index("insert lineend"):
