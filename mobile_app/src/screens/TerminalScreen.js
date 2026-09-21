@@ -22,6 +22,7 @@ export default function TerminalScreen({ route, navigation }) {
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [terminalOutput, setTerminalOutput] = useState("");
+  const cursorRef = useRef(0);
   const [commandInput, setCommandInput] = useState('');
   const [connected, setConnected] = useState(false);
 
@@ -76,6 +77,7 @@ export default function TerminalScreen({ route, navigation }) {
               setSessionId(response.session_id);
               setConnected(true);
               setTerminalOutput("");
+              cursorRef.current = 0;
               listenToStdout();
             } else {
               appendOutput(`[ERROR] El nodo remoto rechazó la sesión terminal: ${response?.msg || 'Error desconocido'}\n`);
@@ -124,34 +126,63 @@ export default function TerminalScreen({ route, navigation }) {
   };
 
   const appendOutput = (text) => {
-    // Sanitizar códigos ANSI agresivamente
+    // Sanitizar códigos ANSI pero mantener \x1b[K para limpiar la línea
     let cleanText = text
-      .replace(/\r\n/g, '\n')                     // Normalizar CRLF a LF primero
+      .replace(/\x1b\[K/g, '\x0E').replace(/\x1b\[0K/g, '\x0E')
+      .replace(/\x1b\[2K/g, '\x0F')
       .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')     // CSI
       .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '') // OSC
       .replace(/\x1b[=>]/g, '')                   // Modos
       .replace(/\x1b[()][A-B0-2]/g, '');          // Designadores
 
     setTerminalOutput(prev => {
-      let result = prev;
+      let chars = prev.split('');
+      let c = cursorRef.current;
+      if (c > chars.length) c = chars.length;
+
       for (let i = 0; i < cleanText.length; i++) {
         const char = cleanText[i];
-        if (char === '\r') {
-          const lastNewline = result.lastIndexOf('\n');
-          result = result.substring(0, lastNewline + 1);
+        if (char === '\x0E') {
+          let end = c;
+          while (end < chars.length && chars[end] !== '\n') end++;
+          chars.splice(c, end - c);
+        } else if (char === '\x0F') {
+          let start = c;
+          while (start > 0 && chars[start - 1] !== '\n') start--;
+          let end = c;
+          while (end < chars.length && chars[end] !== '\n') end++;
+          chars.splice(start, end - start);
+          c = start;
+        } else if (char === '\r') {
+          while (c > 0 && chars[c - 1] !== '\n') c--;
         } else if (char === '\b' || char === '\x08' || char === '\x7f') {
-          if (result.length > 0 && result[result.length - 1] !== '\n') {
-            result = result.substring(0, result.length - 1);
+          if (c > 0 && chars[c - 1] !== '\n') {
+            c--;
+            chars.splice(c, 1);
           }
+        } else if (char === '\n') {
+          while (c < chars.length && chars[c] !== '\n') c++;
+          chars.splice(c, 0, '\n');
+          c++;
         } else {
-          result += char;
+          if (c < chars.length && chars[c] !== '\n') {
+            chars[c] = char;
+            c++;
+          } else {
+            chars.splice(c, 0, char);
+            c++;
+          }
         }
       }
-      
-      if (result.length > 15000) {
-        return result.substring(result.length - 15000);
+
+      if (chars.length > 15000) {
+        let trim = chars.length - 15000;
+        chars = chars.slice(trim);
+        c = Math.max(0, c - trim);
       }
-      return result;
+      
+      cursorRef.current = c;
+      return chars.join('');
     });
 
     setTimeout(() => {
