@@ -1777,6 +1777,10 @@ class SysNodeDesktopApp(ctk.CTk):
         def clean_ansi(text: str) -> str:
             if not text:
                 return ""
+            # Interceptar Clear to End of Line (K o 0K) y Clear Line (2K)
+            text = text.replace('\x1b[K', '\x0E').replace('\x1b[0K', '\x0E')
+            text = text.replace('\x1b[2K', '\x0F')
+            
             text = text.replace('\r\n', '\n')
             text = re.sub(r'\x1b\][0-9]*;[\s\S]*?(?:\x07|\x1b\\|\n|$)', '', text)
             text = re.sub(r'\][0-9]+;[\s\S]*?(?:\x07|\x1b\\|\n|$)', '', text)
@@ -1799,7 +1803,11 @@ class SysNodeDesktopApp(ctk.CTk):
             if not cleaned: return
             
             for char in cleaned:
-                if char == '\r':
+                if char == '\x0E':
+                    term_text.delete("insert", "insert lineend")
+                elif char == '\x0F':
+                    term_text.delete("insert linestart", "insert lineend")
+                elif char == '\r':
                     term_text.mark_set("insert", "insert linestart")
                 elif char in ('\b', '\x08', '\x7f'):
                     if term_text.index("insert") != term_text.index("insert linestart"):
