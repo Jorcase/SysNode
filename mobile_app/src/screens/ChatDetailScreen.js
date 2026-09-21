@@ -381,7 +381,7 @@ export default function ChatDetailScreen() {
       status: 'sending'
     };
 
-    setMessages(prev => [...prev, reqMsg]);
+    setMessages(prev => [reqMsg, ...prev]);
     MessageStorage.saveMessage(targetNodeId, reqMsg);
 
     if (!clientRef.current) {
@@ -396,22 +396,24 @@ export default function ChatDetailScreen() {
           action: "REMOTE_BASH_CMD",
           sender_id: identity?.node_id || "mobile-id",
           sender_name: identity?.node_name || "Celular",
-          bash_command: cmd.command
+          bash_command: cmd.command,
+          is_background: cmd.isBackground || false
         }).then((res) => {
           setMessages(prev => prev.map(m => m.id === reqMsgId ? {...m, status: 'sent'} : m));
           MessageStorage.updateMessageStatus(targetNodeId, reqMsgId, 'sent');
 
-          // Mensaje con resultado devuelto por la PC
           const resResult = res?.result || res?.msg || "Comando ejecutado exitosamente en PC.";
+          const statusIcon = res?.status === 'OK' ? '[ÉXITO]' : '[ERROR]';
+          
           const resMsg = {
             id: (Date.now() + 1).toString(),
-            text: `[SysAdmin - Resultado de ${node.name}]:\n${resResult}`,
+            text: `${statusIcon} Resultado del Remoto\n------------------------------\n${resResult}`,
             time: new Date().toLocaleTimeString().slice(0, 5),
             timestamp: Date.now(),
             isMe: false,
             status: 'read'
           };
-          setMessages(prev => [...prev, resMsg]);
+          setMessages(prev => [resMsg, ...prev]);
           MessageStorage.saveMessage(targetNodeId, resMsg);
         }).catch(err => {
           console.error("Error ejecutando comando:", err);

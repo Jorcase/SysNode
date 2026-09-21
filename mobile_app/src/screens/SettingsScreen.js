@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, Alert, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, Alert, FlatList, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -25,6 +25,7 @@ export default function SettingsScreen() {
   const [editingCmd, setEditingCmd] = useState(null);
   const [cmdNameInput, setCmdNameInput] = useState('');
   const [cmdScriptInput, setCmdScriptInput] = useState('');
+  const [cmdBgInput, setCmdBgInput] = useState(false);
 
   useEffect(() => {
     loadStorageStats();
@@ -105,6 +106,7 @@ export default function SettingsScreen() {
     setEditingCmd(null);
     setCmdNameInput('');
     setCmdScriptInput('');
+    setCmdBgInput(false);
     setShowEditCmdModal(true);
   };
 
@@ -112,6 +114,7 @@ export default function SettingsScreen() {
     setEditingCmd(cmd);
     setCmdNameInput(cmd.name);
     setCmdScriptInput(cmd.command);
+    setCmdBgInput(cmd.isBackground || false);
     setShowEditCmdModal(true);
   };
 
@@ -125,6 +128,7 @@ export default function SettingsScreen() {
       id: editingCmd ? editingCmd.id : null,
       name: cmdNameInput.trim(),
       command: cmdScriptInput.trim(),
+      isBackground: cmdBgInput,
       isDefault: editingCmd ? editingCmd.isDefault : false
     };
 
@@ -346,15 +350,32 @@ export default function SettingsScreen() {
               onChangeText={setCmdNameInput}
             />
 
-            <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Comando / Identificador Whitelist</Text>
+            <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Comando o Script (Opcional: Multi-OS con etiquetas [windows], [linux])</Text>
             <TextInput
-              className="bg-gray-100 dark:bg-[#0f1115] text-black dark:text-white p-2.5 rounded-md mb-6 text-sm font-mono border border-gray-200 dark:border-gray-800"
-              placeholder="ej. CMD_LOCK_SCREEN"
+              className="bg-gray-100 dark:bg-[#0f1115] text-black dark:text-white p-2.5 rounded-md mb-4 text-sm font-mono border border-gray-200 dark:border-gray-800"
+              placeholder="[windows]\nwinget upgrade\n[ubuntu]\napt update"
               placeholderTextColor="#9ca3af"
               value={cmdScriptInput}
               onChangeText={setCmdScriptInput}
               multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              autoCapitalize="none"
+              autoCorrect={false}
             />
+
+            <View className="flex-row items-center justify-between mb-6">
+              <View>
+                <Text className="text-sm font-bold text-black dark:text-white">Fondo / Background</Text>
+                <Text className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Ideal para abrir apps (no espera logs)</Text>
+              </View>
+              <Switch
+                value={cmdBgInput}
+                onValueChange={setCmdBgInput}
+                trackColor={{ false: "#374151", true: "#3b82f6" }}
+                thumbColor={"#ffffff"}
+              />
+            </View>
 
             <View className="flex-row justify-end space-x-2">
               <TouchableOpacity 

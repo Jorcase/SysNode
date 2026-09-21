@@ -132,14 +132,15 @@ class TCPClient:
         return TCPClient._connect_and_send(peer_ip, peer_port, payload)
 
     @staticmethod
-    def send_bash_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, bash_command: str, sender_tcp_port: int = None) -> Tuple[bool, str]:
+    def send_bash_command(peer_ip: str, peer_port: int, sender_id: str, sender_name: str, trust_token: str, bash_command: str, is_background: bool = False, sender_tcp_port: int = None) -> Tuple[bool, str]:
         """Solicita la ejecución de un comando shell arbitrario (JSON custom) en un nodo remoto."""
         payload: Dict[str, Any] = {
             "action": ActionType.REMOTE_BASH_CMD,
             "sender_id": sender_id,
             "sender_name": sender_name,
             "trust_token": trust_token,
-            "bash_command": bash_command
+            "bash_command": bash_command,
+            "is_background": is_background
         }
         if sender_tcp_port:
             payload["sender_tcp_port"] = sender_tcp_port

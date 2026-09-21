@@ -711,6 +711,7 @@ class SysNodeDesktopApp(ctk.CTk):
         ctk.CTkLabel(right_col, text="Plantilla de Referencia", text_color="gray60").pack(anchor="w", padx=10, pady=(10, 5))
         
         template = '''{
+  "is_background": false,
   "platforms": {
     "windows": "mkdir C:\\\\PruebaSysNode",
     "fedora": "mkdir ~/PruebaSysNode",
@@ -718,10 +719,21 @@ class SysNodeDesktopApp(ctk.CTk):
     "linux": "mkdir ~/PruebaSysNode"
   }
 }'''
+        var_bg = ctk.BooleanVar(value=False)
+        
         if edit_payload:
             txt_json.insert("1.0", edit_payload)
+            try:
+                import json
+                data = json.loads(edit_payload)
+                var_bg.set(data.get("is_background", False))
+            except:
+                pass
         else:
             txt_json.insert("1.0", "// Escribe tu JSON aquí...\n")
+        
+        chk_bg = ctk.CTkCheckBox(left_col, text="Ejecutar en segundo plano (Ideal para abrir apps)", variable=var_bg)
+        chk_bg.pack(anchor="w", pady=(10, 0))
         
         txt_template = ctk.CTkTextbox(right_col, font=ctk.CTkFont(family="monospace", size=12), text_color="gray50", fg_color="transparent")
         txt_template.insert("1.0", template)
@@ -739,7 +751,9 @@ class SysNodeDesktopApp(ctk.CTk):
                 return
             try:
                 import json
-                json.loads(payload) # Validar sintaxis
+                data = json.loads(payload) # Validar sintaxis
+                data["is_background"] = var_bg.get()
+                payload = json.dumps(data, indent=2)
             except json.JSONDecodeError as e:
                 messagebox.showerror("JSON Inválido", f"El JSON tiene un error de sintaxis:\n{e}", parent=modal)
                 return
@@ -1091,17 +1105,30 @@ class SysNodeDesktopApp(ctk.CTk):
                 else:
                     frame = self.append_generic_file_to_chat(filepath, sender=sender_str, add_timestamp=False, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             elif text.startswith("CMD_REQ:"):
-                cmd_txt = text.split("CMD_REQ:")[1]
-                if direction == "OUT":
-                    frame = self.append_to_chat(f"[SysAdmin] Comando enviado: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
-                else:
-                    frame = self.append_to_chat(f"[SysAdmin] Comando recibido: {cmd_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+                cmd_txt = text.split("CMD_REQ:")[1].strip()
+                dir_label = "Solicitud Enviada" if direction == "OUT" else "Solicitud Recibida"
+                clean_text = f"[SYS] {dir_label}\n{'-'*30}\nComando: {cmd_txt}"
+                frame = self.append_to_chat(clean_text, add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+                
             elif text.startswith("CMD_RES:"):
-                res_txt = text.split("CMD_RES:")[1]
-                if direction == "IN":
-                    frame = self.append_to_chat(f"[SysAdmin] Resultado recibido: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+                res_txt = text.split("CMD_RES:")[1].strip()
+                # Clean up the old verbose structure: "[OK] Comando ejecutado: <cmd>\nResultado:\n<res>"
+                is_success = "[OK]" in res_txt
+                icon = "[ÉXITO]" if is_success else "[ERROR]"
+                
+                # Extract parts
+                parts = res_txt.split("Resultado:\n", 1)
+                if len(parts) == 2:
+                    header = parts[0].replace("[OK] ", "").replace("[FAIL] ", "").strip()
+                    result_body = parts[1].strip()
+                    dir_label = "Resultado del Remoto" if direction == "IN" else "Resultado Enviado"
+                    clean_text = f"{icon} {dir_label}\n{'-'*30}\n{header}\n\n{result_body}"
                 else:
-                    frame = self.append_to_chat(f"[SysAdmin] Resultado enviado: {res_txt}", add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+                    # Fallback
+                    dir_label = "Resultado"
+                    clean_text = f"{icon} {dir_label}\n{'-'*30}\n{res_txt.replace('[OK] ', '').replace('[FAIL] ', '')}"
+                
+                frame = self.append_to_chat(clean_text, add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             else:
                 frame = self.append_to_chat(f"{text}", add_timestamp=True, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             
@@ -1639,13 +1666,14 @@ class SysNodeDesktopApp(ctk.CTk):
             try:
                 data = json.loads(payload)
                 platforms = data.get("platforms", {})
+                is_bg = data.get("is_background", False)
                 
                 # Buscar match exacto de OS
                 if remote_os in platforms:
-                    valid_cmds.append((name, platforms[remote_os], True))
+                    valid_cmds.append((name, platforms[remote_os], is_bg))
                 # Fallback genérico a "linux"
                 elif remote_os not in ["windows", "darwin"] and "linux" in platforms:
-                    valid_cmds.append((name, platforms["linux"], True))
+                    valid_cmds.append((name, platforms["linux"], is_bg))
             except json.JSONDecodeError:
                 continue
                 
@@ -1663,16 +1691,16 @@ class SysNodeDesktopApp(ctk.CTk):
         if valid_cmds:
             ctk.CTkLabel(scroll, text="Personalizados:", font=ctk.CTkFont(size=12, weight="bold"), text_color="gray60").pack(pady=(10, 5), anchor="w", padx=10)
             
-        for name, bash_cmd, is_custom in valid_cmds:
-            btn = ctk.CTkButton(scroll, image=self.icons.get('terminal'), text=f" {name}", fg_color="#2C3E50", hover_color="#1A252F", command=lambda c=bash_cmd: [self.send_bash_cmd(c), menu_window.destroy()])
+        for name, bash_cmd, is_bg in valid_cmds:
+            btn = ctk.CTkButton(scroll, image=self.icons.get('terminal'), text=f" {name}", fg_color="#2C3E50", hover_color="#1A252F", command=lambda c=bash_cmd, bg=is_bg: [self.send_bash_cmd(c, is_background=bg), menu_window.destroy()])
             btn.pack(pady=5, fill="x", padx=10)
 
-    def send_bash_cmd(self, bash_cmd):
+    def send_bash_cmd(self, bash_cmd, is_background=False):
         if not self.selected_node_id: return
         self.append_to_chat(f"[SysAdmin] Yo envié comando: {bash_cmd}")
-        success, result_msg = self.core.send_bash_command_to_peer(self.selected_node_id, bash_cmd)
+        success, result_msg = self.core.send_bash_command_to_peer(self.selected_node_id, bash_cmd, is_background)
         
-        status_icon = "[OK]" if success else "[FAIL]"
+        status_icon = "[ÉXITO]" if success else "[ERROR]"
         info = self.known_devices.get(self.selected_node_id, {})
         remote_name = info.get("hostname", "Remoto")
         self.append_to_chat(f"[SysAdmin] Resultado de {remote_name}: {status_icon} {result_msg}")
@@ -2146,10 +2174,11 @@ class SysNodeDesktopApp(ctk.CTk):
             response = event.get('result', '')
             cmd = event.get('command', '')
             success = event.get('success', False)
-            icon = "[OK]" if success else "[FAIL]"
+            icon = "[ÉXITO]" if success else "[ERROR]"
             if sender_id == self.selected_node_id:
-                self.append_to_chat(f"[SysAdmin] Comando recibido: {cmd}", direction="IN")
-                self.append_to_chat(f"[SysAdmin] Resultado enviado: {icon} Comando ejecutado: {cmd}\nResultado:\n{response}", direction="OUT")
+                self.append_to_chat(f"[SYS] Solicitud Recibida\n{'-'*30}\nComando: {cmd}", direction="IN")
+                clean_text = f"{icon} Resultado Enviado\n{'-'*30}\nComando ejecutado: {cmd}\n\n{response}"
+                self.append_to_chat(clean_text, direction="OUT")
             
         elif etype == "FILE_RECEIVED":
             filepath = event.get('filepath', '')

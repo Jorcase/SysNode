@@ -61,10 +61,13 @@ export default function TerminalScreen({ route, navigation }) {
         async () => {
           appendOutput(`[SYSNODE] Solicitando sesión PTY...\n`);
           try {
+            const { getIdentity } = require('../network/MyIdentity');
+            const myId = getIdentity();
+
             const response = await client.sendMessageWithResponse({
               action: 'TERM_INIT',
-              sender_id: 'mobile_client',
-              sender_name: 'App Móvil',
+              sender_id: myId.node_id,
+              sender_name: myId.node_name,
               cols: 80,
               rows: 24
             });

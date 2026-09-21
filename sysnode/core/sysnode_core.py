@@ -395,7 +395,7 @@ class SysNodeCore:
         
         return success, msg
 
-    def send_bash_command_to_peer(self, node_id: str, bash_command: str) -> Tuple[bool, str]:
+    def send_bash_command_to_peer(self, node_id: str, bash_command: str, is_background: bool = False) -> Tuple[bool, str]:
         """Envía una solicitud de ejecución de comando custom a un nodo activo."""
         peers = self.get_active_peers()
         if node_id not in peers:
@@ -413,7 +413,8 @@ class SysNodeCore:
             sender_id=self.node_id,
             sender_name=self.node_name,
             trust_token=trust_token,
-            bash_command=bash_command
+            bash_command=bash_command,
+            is_background=is_background
         )
         
         if not success and "NOT_PAIRED" in str(msg):

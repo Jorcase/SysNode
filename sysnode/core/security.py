@@ -138,6 +138,96 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
         logger.error(f"Error ejecutando comando {command_key}: {e}")
         return False, f"Error durante la ejecución: {str(e)}"
 
+def get_detailed_os() -> list:
+    """Retorna una lista de identificadores de SO de más específico a más general."""
+    sys_os = platform.system().lower()
+    if sys_os == "windows":
+        return ["windows"]
+    if sys_os == "darwin":
+        return ["mac", "macos", "darwin"]
+    
+    os_list = ["linux"]
+    if sys_os == "linux":
+        try:
+            with open("/etc/os-release", "r") as f:
+                for line in f:
+                    if line.startswith("ID="):
+                        distro_id = line.strip().split("=")[1].strip('"').lower()
+                        os_list.insert(0, distro_id)
+                        break
+        except Exception:
+            pass
+    return os_list
+
+def parse_multi_os_command(raw_command: str, os_hierarchy: list) -> str:
+    """
+    Parsea un comando con etiquetas como [windows], [ubuntu], [linux]
+    y devuelve el mejor comando para el SO actual.
+    Si no hay etiquetas, devuelve el comando original.
+    """
+    import re
+    
+    # Buscar todas las etiquetas y su contenido
+    # Formato: [etiqueta]\n comando...
+    blocks = re.split(r'\[(.*?)\]', raw_command)
+    
+    if len(blocks) <= 1:
+        # No hay etiquetas, es un comando crudo
+        return raw_command.strip()
+        
+    cmd_map = {}
+    # blocks[0] es lo que hay antes de la primera etiqueta (generalmente vacío)
+    for i in range(1, len(blocks), 2):
+        tag = blocks[i].strip().lower()
+        content = blocks[i+1].strip()
+        cmd_map[tag] = content
+        
+    # Buscar el más específico
+    for os_id in os_hierarchy:
+        if os_id in cmd_map:
+            return cmd_map[os_id]
+            
+    # Fallback
+    return ""
+
+def execute_custom_bash_command(bash_command: str, receiver_name: str = None, is_background: bool = False) -> Tuple[bool, str]:
+    """
+    Ejecuta un comando Bash/Batch arbitrario enviado desde un dispositivo vinculado y confiable.
+    Atención: Esto ignora la lista blanca y delega la seguridad exclusivamente al token de vinculación.
+    """
+    node_label = receiver_name or platform.node()
+    
+    os_hierarchy = get_detailed_os()
+    final_command = parse_multi_os_command(bash_command, os_hierarchy)
+    
+    if not final_command:
+        return False, f"[{node_label}] Error: El comando proporcionado no tiene instrucciones compatibles para este sistema operativo (Detectado: {os_hierarchy})."
+        
+    try:
+        if is_background:
+            # Lanzar en segundo plano sin esperar a que termine
+            subprocess.Popen(final_command, shell=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True, f"[{node_label}] $ {final_command}\n[Proceso ejecutado correctamente en segundo plano]"
+        else:
+            # Ejecución síncrona normal con timeout
+            proc = subprocess.run(final_command, shell=True, capture_output=True, text=True, timeout=10)
+            
+            output = proc.stdout.strip()
+            if proc.stderr.strip():
+                output += f"\n[stderr]\n{proc.stderr.strip()}"
+                
+            if not output:
+                output = f"Comando ejecutado. Código de salida: {proc.returncode}"
+                
+            return (proc.returncode == 0), f"[{node_label}] $ {final_command}\n{output}"
+            
+    except subprocess.TimeoutExpired:
+        return False, f"[{node_label}] Error: El comando excedió el tiempo límite (10s)."
+    except FileNotFoundError:
+        return False, f"[{node_label}] Error: Comando no encontrado o archivo inexistente."
+    except Exception as e:
+        logger.error(f"Error ejecutando comando bash remoto: {e}")
+        return False, f"[{node_label}] Error en ejecución: {str(e)}"
 
 def sanitize_filename(incoming_filename: str) -> str:
     r"""

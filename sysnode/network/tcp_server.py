@@ -255,20 +255,26 @@ class TCPClientHandlerThread(threading.Thread):
                     break
 
                 elif action == ActionType.REMOTE_BASH_CMD:
-                    logger.warning(f"🚨 ACCESO DENEGADO: Intento de ejecución BASH no autenticada desde {self.peer_ip} ({sender_name}).")
-                    result_msg = "ACCESO DENEGADO: La ejecución de comandos shell arbitrarios está deshabilitada por políticas de seguridad de SysNode."
+                    bash_command = payload.get("bash_command", "")
+                    logger.info(f"Solicitud de comando BASH: '{bash_command}' enviado por {sender_name}")
+
+                    from sysnode.core.security import execute_custom_bash_command
+                    success, result_msg = execute_custom_bash_command(bash_command, receiver_name=self.node_name)
+
                     self.event_callback({
                         "event": "COMMAND_RECEIVED",
-                        "command": "REMOTE_BASH_BLOCKED",
+                        "command": bash_command,
                         "sender_id": sender_id,
                         "sender_name": sender_name,
                         "peer_ip": self.peer_ip,
-                        "success": False,
+                        "sender_tcp_port": sender_tcp_port,
+                        "success": success,
                         "result": result_msg
                     })
+
                     send_framed_message(self.client_sock, {
-                        "status": "ERROR",
-                        "command": "REMOTE_BASH_BLOCKED",
+                        "status": "OK" if success else "ERROR",
+                        "command": bash_command,
                         "result": result_msg
                     })
                     break

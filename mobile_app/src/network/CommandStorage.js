@@ -3,10 +3,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 const STORAGE_FILE = (FileSystem.documentDirectory || '') + 'sysnode_custom_commands.json';
 
 const DEFAULT_COMMANDS = [
-  { id: 'def_1', name: 'Bloquear Sesión', command: 'loginctl lock-session || gnome-screensaver-command -l', isDefault: true },
-  { id: 'def_2', name: 'Espacio en Disco', command: 'df -h', isDefault: true },
-  { id: 'def_3', name: 'Uptime del Sistema', command: 'uptime', isDefault: true },
-  { id: 'def_4', name: 'Top 10 Procesos por Memoria', command: 'ps aux --sort=-%mem | head -n 10', isDefault: true },
+  { id: 'def_1', name: 'Bloquear Sesión', command: '[windows]\nrundll32.exe user32.dll,LockWorkStation\n[linux]\nloginctl lock-session || gnome-screensaver-command -l', isBackground: false, isDefault: true },
+  { id: 'def_2', name: 'Actualizar Sistema (Ejemplo Multi-OS)', command: '[windows]\nwinget upgrade --all\n[ubuntu]\nsudo apt update && sudo apt upgrade -y\n[fedora]\nsudo dnf update -y', isBackground: false, isDefault: true },
+  { id: 'def_3', name: 'Uptime del Sistema', command: 'uptime', isBackground: false, isDefault: true },
+  { id: 'def_4', name: 'Información de Red', command: '[windows]\nipconfig\n[linux]\nip a', isBackground: false, isDefault: true },
 ];
 
 let memoryCache = null;
