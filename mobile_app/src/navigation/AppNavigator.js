@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BottomTabNavigator from './BottomTabNavigator';
 import ChatDetailScreen from '../screens/ChatDetailScreen';
 import TerminalScreen from '../screens/TerminalScreen';
+import DownloadsScreen from '../screens/DownloadsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -22,6 +23,12 @@ export default function AppNavigator() {
       <Stack.Screen 
         name="Terminal" 
         component={TerminalScreen} 
+      />
+
+      {/* Pantalla de Descargas Interna */}
+      <Stack.Screen 
+        name="Downloads" 
+        component={DownloadsScreen} 
       />
     </Stack.Navigator>
   );

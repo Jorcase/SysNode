@@ -110,6 +110,12 @@ export const MessageStorage = {
     await db.runAsync('UPDATE messages SET status = ? WHERE id = ?', [status, messageId]);
   },
 
+  async markAllAsRead(nodeId) {
+    if (!nodeId) return;
+    const db = await getDb();
+    await db.runAsync('UPDATE messages SET status = ? WHERE node_id = ? AND isMe = 0 AND status = ?', ['read', nodeId, 'unread']);
+  },
+
   async updateMessageText(nodeId, msgUuid, newText) {
     if (!nodeId || !msgUuid) return;
     const db = await getDb();
@@ -137,6 +143,15 @@ export const MessageStorage = {
         }
       }
     }
+    
+    // Buscar conteo de no leídos
+    const unreadRows = await db.getAllAsync('SELECT node_id, COUNT(*) as count FROM messages WHERE status = ? AND isMe = 0 GROUP BY node_id', ['unread']);
+    for (const r of unreadRows) {
+      if (latest[r.node_id]) {
+        latest[r.node_id].unreadCount = r.count;
+      }
+    }
+    
     return latest;
   },
 

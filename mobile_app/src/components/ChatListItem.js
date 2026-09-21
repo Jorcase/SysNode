@@ -37,18 +37,26 @@ export default function ChatListItem({ item, onPress, onLongPress }) {
       </View>
 
       {/* Meta (Date & Active Indicator) */}
-      <View className="items-end ml-2">
-        {item.isActive ? (
-          <View className="flex-row items-center bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-md">
-            <View className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1" />
-            <Text className="text-[10px] font-bold text-green-600 dark:text-green-400">Activo</Text>
-          </View>
-        ) : (
-          <View className="flex-row items-center bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-md">
-            <View className="w-1.5 h-1.5 rounded-full bg-gray-400 mr-1" />
-            <Text className="text-[10px] font-bold text-gray-500 dark:text-gray-400">Inactivo</Text>
-          </View>
-        )}
+      <View className="items-end ml-2 justify-center">
+        {item.date ? <Text className="text-[10px] text-gray-400 dark:text-gray-500 mb-1">{item.date}</Text> : null}
+        <View className="flex-row items-center mt-1">
+          {item.unreadCount > 0 && (
+            <View className="bg-blue-600 rounded-full px-1.5 py-0.5 mr-2 min-w-[20px] items-center justify-center">
+              <Text className="text-[10px] font-bold text-white">{item.unreadCount > 99 ? '99+' : item.unreadCount}</Text>
+            </View>
+          )}
+          {item.isActive ? (
+            <View className="flex-row items-center bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-md">
+              <View className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1" />
+              <Text className="text-[10px] font-bold text-green-600 dark:text-green-400">Activo</Text>
+            </View>
+          ) : (
+            <View className="flex-row items-center bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-md">
+              <View className="w-1.5 h-1.5 rounded-full bg-gray-400 mr-1" />
+              <Text className="text-[10px] font-bold text-gray-500 dark:text-gray-400">Inactivo</Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );

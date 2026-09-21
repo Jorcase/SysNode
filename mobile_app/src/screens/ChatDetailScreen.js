@@ -16,7 +16,6 @@ export default function ChatDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  
   const node = route.params?.node || { name: 'Desconocido', isActive: false, ip: '0.0.0.0' };
   
   // Modals & Input state
@@ -81,6 +80,9 @@ export default function ChatDetailScreen() {
     userHasScrolledRef.current = false;
     isLoadingMoreRef.current = false;
     const targetNodeId = node.id || 'pc_desktop_node';
+    
+    // Marcar como leídos los mensajes anteriores al abrir el chat
+    MessageStorage.markAllAsRead(targetNodeId);
 
     // 1. Cargar únicamente los últimos 30 mensajes para evitar saturación
     MessageStorage.getMessagesPaged(targetNodeId, PAGE_SIZE, 0).then(res => {
@@ -123,9 +125,16 @@ export default function ChatDetailScreen() {
         MessageStorage.saveMessage(incomingSenderId, newMsg);
 
         if (incomingSenderId === targetNodeId || targetNodeId === 'pc_desktop_node') {
+          // Al estar en el chat, marcamos como leído inmediatamente
+          if (incomingSenderId === targetNodeId) {
+            newMsg.status = 'read';
+            MessageStorage.updateMessageStatus(targetNodeId, msgId, 'read');
+          }
+
           setMessages(prev => {
+            // Prevenir duplicados en la UI
             if (prev.some(m => m.id === newMsg.id)) return prev;
-            return [newMsg, ...prev]; // Invertido: nuevo va al inicio
+            return [newMsg, ...prev]; // Agregar al principio para FlatList invertido
           });
         }
       }
@@ -887,7 +896,7 @@ export default function ChatDetailScreen() {
             <TouchableOpacity 
               onPress={() => {
                 setShowDeviceInfoModal(false);
-                navigation.navigate('MainTabs', { screen: 'Settings' });
+                navigation.navigate('Downloads');
               }}
               className="py-2.5 bg-blue-600 rounded-md items-center mb-2"
             >

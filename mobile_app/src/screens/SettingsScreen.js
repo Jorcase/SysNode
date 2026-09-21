@@ -7,7 +7,7 @@ import * as Sharing from 'expo-sharing';
 import { CommandStorage } from '../network/CommandStorage';
 import { useMyIdentity } from '../network/MyIdentity';
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { identity, updateIdentity } = useMyIdentity();
 
@@ -65,41 +65,8 @@ export default function SettingsScreen() {
     setCommands(cmds);
   };
 
-  const handleOpenFolder = async () => {
-    try {
-      const dir = downloadPath;
-      const info = await FileSystem.getInfoAsync(dir);
-      if (!info.exists) {
-        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      }
-      const files = await FileSystem.readDirectoryAsync(dir);
-      if (files.length > 0) {
-        const firstFileUri = dir + files[0];
-        const isAvailable = await Sharing.isAvailableAsync();
-        if (isAvailable) {
-          await Sharing.shareAsync(firstFileUri, { dialogTitle: 'Abrir Carpeta de Descargas' });
-        } else {
-          Alert.alert("Ubicación de Carpeta", dir);
-        }
-      } else {
-        Alert.alert("Carpeta Vacía", `Directorio de descargas activo:\n${dir}`);
-      }
-    } catch (e) {
-      Alert.alert("Carpeta de Descargas", `Ruta:\n${downloadPath}`);
-    }
-  };
-
-  const handleChangePath = () => {
-    setCustomPathInput(downloadPath);
-    setShowChangePathModal(true);
-  };
-
-  const handleSavePath = async () => {
-    if (customPathInput.trim()) {
-      setDownloadPath(customPathInput.trim());
-      setShowChangePathModal(false);
-      Alert.alert("Ruta Actualizada", `Nueva carpeta de almacenamiento:\n${customPathInput.trim()}`);
-    }
+  const handleOpenFolder = () => {
+    navigation.navigate('Downloads');
   };
 
   const handleOpenAddCommand = () => {
@@ -213,19 +180,11 @@ export default function SettingsScreen() {
 
           <View className="flex-row space-x-2 mt-2">
             <TouchableOpacity 
-              className="flex-1 flex-row items-center justify-center py-2.5 px-3 bg-blue-600 rounded-md mr-2"
+              className="flex-1 flex-row items-center justify-center py-2.5 px-3 bg-blue-600 rounded-md"
               onPress={handleOpenFolder}
             >
               <Ionicons name="folder-open-outline" size={16} color="white" className="mr-1.5" />
-              <Text className="text-xs font-bold text-white ml-1">Abrir Carpeta</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              className="flex-1 flex-row items-center justify-center py-2.5 px-3 bg-gray-200 dark:bg-gray-800 rounded-md"
-              onPress={handleChangePath}
-            >
-              <Ionicons name="pencil-outline" size={16} color="#4b5563" className="mr-1.5" />
-              <Text className="text-xs font-bold text-gray-700 dark:text-gray-300 ml-1">Cambiar Ruta</Text>
+              <Text className="text-xs font-bold text-white ml-1">Ver Archivos</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -256,40 +215,6 @@ export default function SettingsScreen() {
           <Text className="text-[10px] text-gray-500 mt-0.5">Conexión P2P Local LAN</Text>
         </View>
       </ScrollView>
-
-      {/* Modal: Cambiar Ruta */}
-      <Modal visible={showChangePathModal} animationType="fade" transparent={true}>
-        <View className="flex-1 bg-black/60 justify-center items-center px-6">
-          <View className="w-full bg-white dark:bg-[#1e2128] rounded-md p-6 border border-gray-200 dark:border-gray-800">
-            <Text className="text-base font-bold text-black dark:text-white mb-2">Cambiar Ruta de Descargas</Text>
-            <Text className="text-xs text-gray-500 dark:text-gray-400 mb-4">Ingresa la nueva ruta de carpeta para guardar descargas:</Text>
-            
-            <TextInput
-              className="bg-gray-100 dark:bg-[#0f1115] text-black dark:text-white p-3 rounded-md mb-6 text-xs font-mono border border-gray-200 dark:border-gray-800"
-              value={customPathInput}
-              onChangeText={setCustomPathInput}
-              placeholder="Ruta absoluta..."
-              placeholderTextColor="#9ca3af"
-            />
-
-            <View className="flex-row justify-end space-x-2">
-              <TouchableOpacity 
-                onPress={() => setShowChangePathModal(false)}
-                className="px-4 py-2 rounded-md bg-gray-200 dark:bg-gray-800 mr-2"
-              >
-                <Text className="text-xs text-gray-700 dark:text-gray-300 font-semibold">Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                onPress={handleSavePath}
-                className="px-4 py-2 rounded-md bg-blue-600"
-              >
-                <Text className="text-xs text-white font-bold">Guardar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Modal: Lista de Comandos Rápidos */}
       <Modal visible={showCommandsModal} animationType="slide" transparent={false}>

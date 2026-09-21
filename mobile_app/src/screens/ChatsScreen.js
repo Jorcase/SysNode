@@ -37,10 +37,19 @@ export default function ChatsScreen() {
   const [manualIp, setManualIp] = useState('');
   const [manualPort, setManualPort] = useState('50001'); // Puerto por defecto
   
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  
   // Camera & Start Modal state
   const [permission, requestPermission] = useCameraPermissions();
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [showStartModal, setShowStartModal] = useState(true);
+  
+  useEffect(() => {
+    if (identity?.node_name) {
+      setShowStartModal(false);
+    }
+  }, [identity?.node_name]);
   
   const udpRef = useRef(null);
   const tcpServerRef = useRef(null);
@@ -86,7 +95,7 @@ export default function ChatsScreen() {
           time: new Date().toLocaleTimeString().slice(0, 5),
           timestamp: Date.now(),
           isMe: false,
-          status: 'read',
+          status: 'unread',
           sender_name: payload.sender_name || payload.sender || senderId,
           ip: payload.peer_ip || '127.0.0.1',
           tcp_port: payload.sender_tcp_port || 50001
@@ -203,7 +212,7 @@ export default function ChatsScreen() {
       date: lastMsgObj ? lastMsgObj.time : '',
       timestamp: lastMsgObj ? lastMsgObj.timestamp : Date.now(),
       isActive: true,
-      unreadCount: 0,
+      unreadCount: lastMsgObj ? (lastMsgObj.unreadCount || 0) : 0,
       ip: peer.ip,
       tcp_port: peer.tcp_port,
       os: peer.os
@@ -221,7 +230,7 @@ export default function ChatsScreen() {
         date: lastMsgObj ? lastMsgObj.time : '',
         timestamp: lastMsgObj ? lastMsgObj.timestamp : 0,
         isActive: false,
-        unreadCount: 0,
+        unreadCount: lastMsgObj ? (lastMsgObj.unreadCount || 0) : 0,
         ip: lastMsgObj.ip || '0.0.0.0',
         tcp_port: lastMsgObj.tcp_port || 50001,
         os: 'Desconocido'
@@ -235,9 +244,11 @@ export default function ChatsScreen() {
     return (b.timestamp || 0) - (a.timestamp || 0);
   });
 
+  const filteredNodes = nodes.filter(n => n.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
   // Display array
-  const displayNodes = nodes.length > 0 ? nodes : [
-    { id: 'me', name: `${nodeName} (Tú)`, lastMessage: 'Esperando nodos en la red...', date: '', isActive: true, unreadCount: 0, isMe: true, os: 'Android' }
+  const displayNodes = filteredNodes.length > 0 ? filteredNodes : [
+    { id: 'me', name: `${nodeName} (Tú)`, lastMessage: searchQuery ? 'No hay resultados' : 'Esperando nodos en la red...', date: '', isActive: true, unreadCount: 0, isMe: true, os: 'Android' }
   ];
 
   const handleLongPress = (item) => {
@@ -397,6 +408,8 @@ export default function ChatsScreen() {
             className="flex-1 ml-2 text-sm text-black dark:text-white"
             placeholder="Buscar dispositivos..."
             placeholderTextColor="#9ca3af"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
           />
         </View>
       </View>
