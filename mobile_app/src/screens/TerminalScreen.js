@@ -21,7 +21,7 @@ export default function TerminalScreen({ route, navigation }) {
   const [sessionId, setSessionId] = useState(null);
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pinInput, setPinInput] = useState('');
-  const [terminalOutput, setTerminalOutput] = useState([]);
+  const [terminalOutput, setTerminalOutput] = useState("");
   const [commandInput, setCommandInput] = useState('');
   const [connected, setConnected] = useState(false);
 
@@ -75,7 +75,7 @@ export default function TerminalScreen({ route, navigation }) {
             if (response && response.status === 'OK') {
               setSessionId(response.session_id);
               setConnected(true);
-              setTerminalOutput([]);
+              setTerminalOutput("");
               listenToStdout();
             } else {
               appendOutput(`[ERROR] El nodo remoto rechazó la sesión terminal: ${response?.msg || 'Error desconocido'}\n`);
@@ -126,17 +126,31 @@ export default function TerminalScreen({ route, navigation }) {
   const appendOutput = (text) => {
     // Sanitizar códigos ANSI agresivamente
     let cleanText = text
-      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')     // CSI (códigos de color, cursor, bracketed paste)
-      .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '') // OSC (Títulos de ventana y rutas, terminados en BEL o ESC \)
-      .replace(/\x1b[=>]/g, '')                   // Modos de teclado
-      .replace(/\x1b[()][A-B0-2]/g, '')           // Designadores de conjunto de caracteres
-      .replace(/\r/g, '');                        // Carriage returns
+      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')     // CSI
+      .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '') // OSC
+      .replace(/\x1b[=>]/g, '')                   // Modos
+      .replace(/\x1b[()][A-B0-2]/g, '');          // Designadores
 
     setTerminalOutput(prev => {
-      const newOutput = [...prev, cleanText];
-      // Mantener solo los últimos 300 fragmentos para no saturar la memoria y evitar lag
-      if (newOutput.length > 300) return newOutput.slice(newOutput.length - 300);
-      return newOutput;
+      let result = prev;
+      for (let i = 0; i < cleanText.length; i++) {
+        const char = cleanText[i];
+        if (char === '\r') {
+          const lastNewline = result.lastIndexOf('\n');
+          result = result.substring(0, lastNewline + 1);
+        } else if (char === '\b' || char === '\x08' || char === '\x7f') {
+          if (result.length > 0 && result[result.length - 1] !== '\n') {
+            result = result.substring(0, result.length - 1);
+          }
+        } else {
+          result += char;
+        }
+      }
+      
+      if (result.length > 15000) {
+        return result.substring(result.length - 15000);
+      }
+      return result;
     });
 
     setTimeout(() => {
@@ -204,7 +218,7 @@ export default function TerminalScreen({ route, navigation }) {
           contentContainerStyle={{ paddingBottom: 20 }}
         >
           <Text className="font-mono text-green-400 text-sm leading-5">
-            {terminalOutput.join('')}
+            {terminalOutput}
           </Text>
         </ScrollView>
 

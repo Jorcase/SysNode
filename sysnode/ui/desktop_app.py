@@ -1777,34 +1777,13 @@ class SysNodeDesktopApp(ctk.CTk):
         def clean_ansi(text: str) -> str:
             if not text:
                 return ""
-            # 1. Normalizar saltos de línea CRLF (\r\n) a \n primero
             text = text.replace('\r\n', '\n')
-
-            # 2. Eliminar secuencias de escape OSC (\x1b]... finalizadas en \x07, \x1b\\, o \n)
             text = re.sub(r'\x1b\][0-9]*;[\s\S]*?(?:\x07|\x1b\\|\n|$)', '', text)
             text = re.sub(r'\][0-9]+;[\s\S]*?(?:\x07|\x1b\\|\n|$)', '', text)
-
-            # 3. Eliminar secuencias de escape CSI (\x1b[...)
             text = re.sub(r'\x1b\[[\d;?<=>]*[A-Za-z@-~]', '', text)
-
-            # 4. Eliminar secuencias de modo de caracteres (\x1b(B, \x1b=, etc.)
             text = re.sub(r'\x1b[\(\)\=\>][A-Za-z0-9]?', '', text)
-
-            # 5. Eliminar bytes huérfanos ESC, NULL, BEL
             text = text.replace('\x1b', '').replace('\x00', '').replace('\x07', '')
-
-            # 6. Procesar \r independientes (redibujado de línea en ZSH/Readline)
-            lines = text.split('\n')
-            processed_lines = []
-            for line in lines:
-                if '\r' in line:
-                    parts = line.split('\r')
-                    final = next((p for p in reversed(parts) if p.strip()), parts[-1])
-                    processed_lines.append(final.strip())
-                else:
-                    processed_lines.append(line)
-
-            return '\n'.join(processed_lines)
+            return text
 
         term_win = ctk.CTkToplevel(self)
         term_win.title(f"Terminal Remota - {hostname} ({ip}:{port})")
@@ -1817,9 +1796,22 @@ class SysNodeDesktopApp(ctk.CTk):
 
         def print_term(msg):
             cleaned = clean_ansi(msg)
-            if cleaned:
-                term_text.insert("end", cleaned)
-                term_text.see("end")
+            if not cleaned: return
+            
+            for char in cleaned:
+                if char == '\r':
+                    term_text.mark_set("insert", "insert linestart")
+                elif char in ('\b', '\x08', '\x7f'):
+                    if term_text.index("insert") != term_text.index("insert linestart"):
+                        term_text.delete("insert-1c")
+                elif char == '\n':
+                    term_text.insert("insert", "\n")
+                else:
+                    if term_text.index("insert") != term_text.index("insert lineend"):
+                        term_text.delete("insert")
+                    term_text.insert("insert", char)
+            
+            term_text.see("insert")
 
         print_term(f"[SYSNODE] Conexión PTY autenticada con éxito en {hostname} ({ip}:{port})...\n\n")
 
