@@ -48,20 +48,21 @@ class SysNodeCore:
         self._broker_lock = threading.Lock()
 
         # Hilos de descubrimiento UDP
+        saved_stealth = self.db.get_local_stealth_mode()
+        
         self.udp_beacon = UDPBeacon(
             node_id=self.node_id,
             tcp_port=self.tcp_port,
             custom_name=self.node_name
         )
-        self.udp_beacon.stealth_mode = True  # Silent by default until user confirms
+        self.udp_beacon.stealth_mode = saved_stealth
         
         self.udp_listener = UDPListener(
             my_node_id=self.node_id,
             event_callback=self.broadcast_event
         )
         
-        # Default to True so it doesn't process beacons while in login screen
-        self.udp_listener.stealth_mode = True
+        self.udp_listener.stealth_mode = saved_stealth
 
         # Servidor TCP para recepción de texto y comandos
         self.tcp_server = TCPServer(
@@ -272,6 +273,12 @@ class SysNodeCore:
             success, response = TCPClient.ping_node(ip, port, self.node_id, self.node_name, sender_tcp_port=self.tcp_port)
             if success:
                 remote_node_id = response.get("node_id")
+                
+                # Prevenir añadirnos a nosotros mismos
+                if remote_node_id == self.node_id:
+                    logger.info(f"Ping manual descubrió el propio nodo en {ip}. Ignorando.")
+                    return
+                    
                 remote_hostname = response.get("hostname", f"Manual_{ip}")
                 remote_os = response.get("os", "Unknown")
                 self.udp_listener.add_manual_peer(ip, port, remote_node_id, remote_hostname, remote_os)

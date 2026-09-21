@@ -34,6 +34,18 @@ class SharingHTTPServer:
             def log_message(self, format, *args):
                 logger.info(f"[HTTP Server] {self.client_address[0]} - - {format%args}")
 
+            def handle(self):
+                try:
+                    super().handle()
+                except (ConnectionResetError, BrokenPipeError):
+                    pass
+                except OSError as e:
+                    # Ignore common connection drop errors
+                    if e.errno in (104, 32, 10054, 10053):
+                        pass
+                    else:
+                        logger.debug(f"[HTTP Server] OS Error in handle: {e}")
+
             def do_GET(self):
                 if getattr(sys, 'frozen', False):
                     # Only serve the host's executable if the correct OS button is clicked

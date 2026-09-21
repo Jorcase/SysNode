@@ -37,6 +37,12 @@ class SysNodeDatabase:
                     cursor.execute("ALTER TABLE local_user ADD COLUMN device_uuid TEXT")
                 except sqlite3.OperationalError:
                     pass
+                    
+                # Add stealth_mode column if not exists
+                try:
+                    cursor.execute("ALTER TABLE local_user ADD COLUMN stealth_mode INTEGER DEFAULT 1")
+                except sqlite3.OperationalError:
+                    pass
                 
                 # Tabla de dispositivos conocidos
                 cursor.execute('''
@@ -158,6 +164,24 @@ class SysNodeDatabase:
                 
             conn.commit()
             return new_uuid
+
+    def get_local_stealth_mode(self) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT stealth_mode FROM local_user WHERE id = 1")
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                return bool(row[0])
+            return True # Default to True (oculto)
+            
+    def set_local_stealth_mode(self, is_stealth: bool):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO local_user (id, username, stealth_mode) VALUES (1, 'User', ?)
+                ON CONFLICT(id) DO UPDATE SET stealth_mode = excluded.stealth_mode
+            ''', (1 if is_stealth else 0,))
+            conn.commit()
 
     def save_manual_peer(self, node_id: str, ip: str, tcp_port: int):
         with sqlite3.connect(self.db_path) as conn:

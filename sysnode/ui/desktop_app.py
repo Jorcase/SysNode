@@ -267,6 +267,7 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.entry_username.configure(state=prev_state)
         
         is_stealth = (self.login_mode_var.get() == "oculto")
+        self.core.db.set_local_stealth_mode(is_stealth)
         self.core.udp_beacon.stealth_mode = is_stealth
         if hasattr(self.core, 'udp_listener'):
             self.core.udp_listener.stealth_mode = is_stealth
@@ -415,27 +416,39 @@ class SysNodeDesktopApp(ctk.CTk):
         header = ctk.CTkLabel(header_frame, text="Info. del contacto", font=ctk.CTkFont(size=16, weight="bold"))
         header.pack(side="left", padx=10)
         
-        # Contenedor central
-        info_frame = ctk.CTkFrame(self.view_remote_profile, fg_color="transparent")
-        info_frame.pack(fill="both", expand=True, pady=20)
+        # Contenedor central con scroll en caso de que quede corto en pantallas chicas
+        self.rp_scroll = ctk.CTkScrollableFrame(self.view_remote_profile, fg_color="transparent")
+        self.rp_scroll.pack(fill="both", expand=True, pady=10)
         
         # Avatar (grande)
-        self.lbl_rp_avatar = ctk.CTkLabel(info_frame, text="", image=self.icons.get('laptop'))
-        self.lbl_rp_avatar.pack(pady=(0, 15))
+        self.lbl_rp_avatar = ctk.CTkLabel(self.rp_scroll, text="", image=self.icons.get('laptop'))
+        self.lbl_rp_avatar.pack(pady=(10, 15))
         
         # Nombre grande
-        self.lbl_rp_hostname = ctk.CTkLabel(info_frame, text="Hostname", font=ctk.CTkFont(size=20, weight="bold"))
+        self.lbl_rp_hostname = ctk.CTkLabel(self.rp_scroll, text="Hostname", font=ctk.CTkFont(size=22, weight="bold"))
         self.lbl_rp_hostname.pack(pady=5)
         
-        # Recuadro de Info adicional
-        details_frame = ctk.CTkFrame(info_frame, fg_color=("gray90", "gray15"), corner_radius=10)
-        details_frame.pack(fill="x", pady=20, padx=15)
+        # Indicador de estado debajo del nombre
+        self.lbl_rp_status = ctk.CTkLabel(self.rp_scroll, text="Desconectado", font=ctk.CTkFont(size=13), text_color="gray50")
+        self.lbl_rp_status.pack(pady=(0, 20))
         
-        self.lbl_rp_os = ctk.CTkLabel(details_frame, text="Disponible", font=ctk.CTkFont(size=14))
-        self.lbl_rp_os.pack(anchor="w", padx=15, pady=(15, 5))
+        # Recuadro de Info técnica
+        self.details_frame = ctk.CTkFrame(self.rp_scroll, fg_color=("gray90", "gray15"), corner_radius=12)
+        self.details_frame.pack(fill="x", pady=10, padx=15)
         
-        self.lbl_rp_ip = ctk.CTkLabel(details_frame, text="", font=ctk.CTkFont(size=14), text_color="gray60")
-        self.lbl_rp_ip.pack(anchor="w", padx=15, pady=(0, 15))
+        # Fila OS
+        os_frame = ctk.CTkFrame(self.details_frame, fg_color="transparent")
+        os_frame.pack(fill="x", padx=15, pady=(15, 5))
+        ctk.CTkLabel(os_frame, image=self.icons.get('os'), text="").pack(side="left", padx=(0, 10))
+        self.lbl_rp_os = ctk.CTkLabel(os_frame, text="Disponible", font=ctk.CTkFont(size=14, weight="bold"))
+        self.lbl_rp_os.pack(side="left")
+        
+        # Fila IP
+        ip_frame = ctk.CTkFrame(self.details_frame, fg_color="transparent")
+        ip_frame.pack(fill="x", padx=15, pady=(5, 15))
+        ctk.CTkLabel(ip_frame, image=self.icons.get('network'), text="").pack(side="left", padx=(0, 10))
+        self.lbl_rp_ip = ctk.CTkLabel(ip_frame, text="", font=ctk.CTkFont(size=14), text_color="gray60")
+        self.lbl_rp_ip.pack(side="left")
         
     def hide_remote_profile(self):
         if hasattr(self, 'view_remote_profile'):
@@ -483,13 +496,17 @@ class SysNodeDesktopApp(ctk.CTk):
         self.lbl_rp_avatar.configure(image=self.icons.get('laptop') if is_desktop else self.icons.get('smartphone'))
         
         self.lbl_rp_hostname.configure(text=hostname)
-        self.lbl_rp_os.configure(text=f"SO: {os_type}")
+        self.lbl_rp_os.configure(text=f"SO: {os_type.capitalize()}" if os_type else "SO: Desconocido")
+        self.lbl_rp_ip.configure(text=f"{ip}:{port}" if ip else "")
         
-        if ip != "Desconocida":
-            self.lbl_rp_ip.configure(text=f"IP: {ip}:{port}")
-        else:
-            self.lbl_rp_ip.configure(text="")
+        is_online = self.selected_node_id in peers
+        if hasattr(self, 'lbl_rp_status'):
+            if is_online:
+                self.lbl_rp_status.configure(text="🟢 En línea", text_color="#2ECC71")
+            else:
+                self.lbl_rp_status.configure(text="⚫ Desconectado", text_color="gray50")
         
+
     def build_settings_view(self):
         self.view_settings = ctk.CTkFrame(self.content_frame)
         self.view_settings.grid_columnconfigure(0, weight=1)
@@ -640,6 +657,7 @@ class SysNodeDesktopApp(ctk.CTk):
 
     def toggle_stealth_mode(self):
         is_stealth = self.switch_stealth.get() == 1
+        self.core.db.set_local_stealth_mode(is_stealth)
         self.core.udp_beacon.stealth_mode = is_stealth
         if hasattr(self.core, 'udp_listener'):
             self.core.udp_listener.stealth_mode = is_stealth
@@ -1095,6 +1113,15 @@ class SysNodeDesktopApp(ctk.CTk):
 
         for msg_uuid, ts, text, direction in recent_messages:
             sender_str = remote_name if direction == "IN" else "Yo"
+            
+            # Format timestamp to HH:MM
+            time_str = ""
+            if ts:
+                try:
+                    time_str = ts.split(" ")[1][:5]
+                except:
+                    time_str = ts
+            
             frame = None
             
             if text.startswith("FILE:"):
@@ -1108,7 +1135,7 @@ class SysNodeDesktopApp(ctk.CTk):
                 cmd_txt = text.split("CMD_REQ:")[1].strip()
                 dir_label = "Solicitud Enviada" if direction == "OUT" else "Solicitud Recibida"
                 clean_text = f"[SYS] {dir_label}\n{'-'*30}\nComando: {cmd_txt}"
-                frame = self.append_to_chat(clean_text, add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+                frame = self.append_to_chat(clean_text, add_timestamp=False, timestamp_text=time_str, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
                 
             elif text.startswith("CMD_RES:"):
                 res_txt = text.split("CMD_RES:")[1].strip()
@@ -1128,9 +1155,9 @@ class SysNodeDesktopApp(ctk.CTk):
                     dir_label = "Resultado"
                     clean_text = f"{icon} {dir_label}\n{'-'*30}\n{res_txt.replace('[OK] ', '').replace('[FAIL] ', '')}"
                 
-                frame = self.append_to_chat(clean_text, add_timestamp=False, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+                frame = self.append_to_chat(clean_text, add_timestamp=False, timestamp_text=time_str, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             else:
-                frame = self.append_to_chat(f"{text}", add_timestamp=True, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
+                frame = self.append_to_chat(f"{text}", add_timestamp=True, timestamp_text=time_str, raw_msg=text, msg_uuid=msg_uuid, direction=direction, auto_scroll=False, before_widget=getattr(self, 'chat_first_widget', None))
             
             if new_first_widget is None and frame is not None:
                 new_first_widget = frame
@@ -1149,13 +1176,20 @@ class SysNodeDesktopApp(ctk.CTk):
             else:
                 self.btn_load_more.pack(side="top", pady=5)
 
+        self.chat_scroll.update_idletasks()
         self.update_idletasks()
         if not is_load_more:
-            self.chat_scroll._parent_canvas.yview_moveto(1.0)
-        # Eliminado el yview_scroll que causaba los saltos bruscos
+            def _force_scroll():
+                try:
+                    self.chat_scroll._parent_canvas.yview_moveto(1.0)
+                except Exception:
+                    pass
+            self.after(20, _force_scroll)
+            self.after(100, _force_scroll)
+            self.after(250, _force_scroll)
 
         
-    def append_to_chat(self, text, add_timestamp=True, raw_msg="", msg_uuid=None, direction=None, auto_scroll=True, before_widget=None):
+    def append_to_chat(self, text, add_timestamp=True, raw_msg="", msg_uuid=None, direction=None, auto_scroll=True, before_widget=None, timestamp_text=""):
         if not raw_msg:
             raw_msg = text
             
@@ -1183,6 +1217,11 @@ class SysNodeDesktopApp(ctk.CTk):
             text_color="white" if is_out else ("gray10", "gray90")
         )
         lbl_msg.pack(side="left", padx=8, pady=6)
+        
+        if timestamp_text:
+            time_color = "gray90" if is_out else "gray50"
+            lbl_time = ctk.CTkLabel(msg_frame, text=timestamp_text, text_color=time_color, font=ctk.CTkFont(size=10))
+            lbl_time.pack(side="left", padx=(0, 8), pady=(6, 6), anchor="se")
         
         if msg_uuid:
             if not hasattr(self, 'chat_bubbles'):
@@ -1415,9 +1454,9 @@ class SysNodeDesktopApp(ctk.CTk):
             
         for n_id, frame in self.node_buttons.items():
             if n_id == node_id:
-                frame._select_btn.configure(fg_color="#2ECC71", text_color="black")
+                frame._select_btn.configure(fg_color="#3498DB", text_color="white") # Blue when selected
             else:
-                frame._select_btn.configure(fg_color=["#3a7ebf", "#1f538d"], text_color=["gray10", "#DCE4EE"])
+                frame._select_btn.configure(fg_color=("gray85", "gray20"), text_color=("gray10", "gray90"))
                 
         os_type = info.get('os_type', '')
         os_lower = os_type.lower()
@@ -2036,7 +2075,8 @@ class SysNodeDesktopApp(ctk.CTk):
         # Renderizar en la UI
         for node_id, info in self.known_devices.items():
             is_online = node_id in current_peers
-            current_unread = bool(self.unread_badges.get(node_id))
+            unread_count = self.unread_badges.get(node_id, 0)
+            current_unread = unread_count > 0
             
             os_lower = info.get('os_type', '').lower()
             is_mobile = any(k in os_lower for k in ["android", "ios", "iphone", "ipad", "mobile", "smartphone"])
@@ -2079,16 +2119,18 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.node_buttons[node_id]._status_lbl = status_lbl
                 self.node_buttons[node_id]._unread_lbl = unread_lbl
                 self.node_buttons[node_id]._last_is_online = is_online
-                self.node_buttons[node_id]._last_unread = current_unread
+                self.node_buttons[node_id]._last_unread_count = unread_count
             else:
                 if (getattr(self.node_buttons[node_id], '_last_is_online', None) != is_online or
-                    getattr(self.node_buttons[node_id], '_last_unread', None) != current_unread or
+                    getattr(self.node_buttons[node_id], '_last_unread_count', None) != unread_count or
                     getattr(self.node_buttons[node_id], '_last_paired', None) != is_paired):
                     self.node_buttons[node_id]._select_btn.configure(text=display_text, image=device_icon)
                     self.node_buttons[node_id]._status_lbl.configure(image=self.icon_online if is_online else self.icon_offline)
+                    
                     self.node_buttons[node_id]._unread_lbl.configure(image=self.icon_unread if current_unread else self.icon_empty)
+                    
                     self.node_buttons[node_id]._last_is_online = is_online
-                    self.node_buttons[node_id]._last_unread = current_unread
+                    self.node_buttons[node_id]._last_unread_count = unread_count
                     self.node_buttons[node_id]._last_paired = is_paired
                     
         while True:
@@ -2156,7 +2198,7 @@ class SysNodeDesktopApp(ctk.CTk):
             else:
                 if not hasattr(self, 'unread_badges'):
                     self.unread_badges = {}
-                self.unread_badges[sender_id] = True
+                self.unread_badges[sender_id] = self.unread_badges.get(sender_id, 0) + 1
                 
         elif etype == "MSG_EDITED":
             if sender_id == self.selected_node_id:
@@ -2180,6 +2222,10 @@ class SysNodeDesktopApp(ctk.CTk):
                 self.append_to_chat(f"[SYS] Solicitud Recibida\n{'-'*30}\nComando: {cmd}", direction="IN")
                 clean_text = f"{icon} Resultado Enviado\n{'-'*30}\nComando ejecutado: {cmd}\n\n{response}"
                 self.append_to_chat(clean_text, direction="OUT")
+            else:
+                if not hasattr(self, 'unread_badges'):
+                    self.unread_badges = {}
+                self.unread_badges[sender_id] = self.unread_badges.get(sender_id, 0) + 1
             
         elif etype == "FILE_RECEIVED":
             filepath = event.get('filepath', '')
@@ -2194,6 +2240,11 @@ class SysNodeDesktopApp(ctk.CTk):
                     self.chat_scroll._parent_canvas.yview_moveto(1.0)
                 else:
                     self.append_to_chat(f"[ERROR] Error al recibir archivo: {event.get('msg')}")
+            else:
+                if success:
+                    if not hasattr(self, 'unread_badges'):
+                        self.unread_badges = {}
+                    self.unread_badges[sender_id] = self.unread_badges.get(sender_id, 0) + 1
                 
         elif etype == "FILE_PROGRESS":
             direction = event.get('direction')
