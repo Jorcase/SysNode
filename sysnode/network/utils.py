@@ -1,7 +1,3 @@
-"""
-SysNode - Utilidades de Socket y Red Multiplataforma
-"""
-
 import socket
 import logging
 
@@ -12,7 +8,7 @@ def get_local_lan_ip() -> str:
     """
     Obtiene la dirección IP real de la interfaz de red local conectada a la LAN.
     A diferencia de socket.gethostbyname(socket.gethostname()), este método no sufre
-    del problema común en Linux (Fedora/Ubuntu) donde el hostname apunta a 127.0.0.1 en /etc/hosts.
+    del problema común en linux donde el hostname apunta a 127.0.0.1 en /etc/hosts.
     
     Funciona creando un socket UDP temporal y consultando la interfaz activa sin enviar paquetes reales.
     """

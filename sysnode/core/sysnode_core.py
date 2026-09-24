@@ -1,9 +1,6 @@
-"""
-SysNode - Orquestador Principal del Nodo P2P (Core Manager)
-"""
-
 import uuid
 import queue
+import secrets
 import logging
 import threading
 from typing import Dict, Any, Tuple
@@ -32,22 +29,22 @@ class SysNodeCore:
         self.tcp_port = tcp_port
         self.local_ip = get_local_lan_ip()
         
-        # Database para persistencia de chat y configuraciones (Inicializar primero)
+        # Base de datos para persistencia de chat y configuraciones
         target_db_path = db_path or os.path.join(os.getcwd(), "SysNode_Received", "history.db")
         self.db = SysNodeDatabase(target_db_path)
 
-        # Identidad Persistente del Nodo
+        # Obtiene o crea el uuid del dispositivo
         self.node_id = self.db.get_or_create_device_uuid()
         
-        # Nombre del nodo (si no se provee, ver si la DB tiene uno guardado, sino HOST_NAME)
+        # Nombre del nodo (si no se provee, ver si la bd tiene uno guardado, sino HOST_NAME)
         db_name = self.db.get_local_username()
         self.node_name = node_name or db_name or HOST_NAME
 
-        # Broker de Eventos (Permite múltiples listeners como Desktop UI y Mobile WS)
+        # Broker de eventos (permite múltiples listeners)
         self.event_queues = []
         self._broker_lock = threading.Lock()
 
-        # Hilos de descubrimiento UDP
+        # Consulta si se guardo previamente el estado del modo stealth
         saved_stealth = self.db.get_local_stealth_mode()
         
         self.udp_beacon = UDPBeacon(
@@ -77,12 +74,10 @@ class SysNodeCore:
         # Servidor HTTP de compartición (inicia apagado)
         self.http_server = SharingHTTPServer()
 
-        self.http_server = SharingHTTPServer()
-
         self._running = False
         self._temp_manual_peers = {}
         
-        # Cargar nodos manuales en hilos separados para no bloquear
+        # Hilo en segundo plano para cargar los nodos manuales
         threading.Thread(target=self._load_manual_peers, daemon=True).start()
         
     def _load_manual_peers(self):
@@ -95,14 +90,14 @@ class SysNodeCore:
         return saved if saved else os.path.abspath("SysNode_Received")
 
     def register_event_queue(self) -> queue.Queue:
-        """Registra una nueva cola de eventos para un suscriptor y la devuelve."""
+        # Registra una nueva cola de eventos para un suscriptor y la devuelve.
         new_q = queue.Queue()
         with self._broker_lock:
             self.event_queues.append(new_q)
         return new_q
 
     def broadcast_event(self, event_dict: Dict[str, Any]) -> None:
-        """Inyecta un evento de red en TODAS las colas suscritas y persiste el historial si es un mensaje de texto."""
+        # Inyecta un evento de red en TODAS las colas suscritas y persiste el historial si es un mensaje de texto.
         # Interceptar mensajes entrantes para persistencia
         if event_dict.get("event") == "TEXT_RECEIVED":
             node_id = event_dict.get("sender_id", "unknown")
@@ -131,7 +126,6 @@ class SysNodeCore:
             success = event_dict.get("success", False)
             
             if success and filepath:
-                # El texto que se guarda en la base de datos es la ruta al archivo con el prefijo FILE:
                 self.db.save_message(node_id, f"FILE:{filepath}", "IN")
                 
         elif event_dict.get("event") == "COMMAND_RECEIVED":
@@ -194,7 +188,7 @@ class SysNodeCore:
                 q.put(event_dict)
 
     def sync_pending_messages(self, node_id: str):
-        """Intenta enviar los mensajes pendientes a un nodo recién conectado."""
+        # Intenta enviar los mensajes pendientes a un nodo recién conectado.
         pending = self.db.get_pending_messages(node_id)
         if not pending:
             return
@@ -226,7 +220,7 @@ class SysNodeCore:
                 break  # Stop syncing if not paired
 
     def start(self) -> None:
-        """Inicia los componentes de red del nodo (UDP y TCP)."""
+        # Inicia los componentes de red del nodo (UDP y TCP).
         if self._running:
             return
 
@@ -247,7 +241,7 @@ class SysNodeCore:
         self._running = True
 
     def stop(self) -> None:
-        """Detiene de forma limpia todos los hilos del nodo."""
+        # Detiene de forma limpia todos los hilos del nodo.
         if not self._running:
             return
 
@@ -264,11 +258,11 @@ class SysNodeCore:
         logger.info("SysNodeCore detenido exitosamente.")
 
     def get_active_peers(self) -> Dict[str, Dict[str, Any]]:
-        """Obtiene la lista actual de nodos descubiertos en la LAN."""
+        # Obtiene la lista actual de nodos descubiertos en la LAN.
         return self.udp_listener.get_active_peers()
 
     def add_manual_peer(self, ip: str, port: int) -> None:
-        """Añade manualmente un nodo a la red, intentando PING TCP para descubrirlo."""
+        # Añade manualmente un nodo a la red, intentando PING TCP para descubrirlo.
         def ping_worker():
             success, response = TCPClient.ping_node(ip, port, self.node_id, self.node_name, sender_tcp_port=self.tcp_port)
             if success:
@@ -285,7 +279,6 @@ class SysNodeCore:
                 # No guardamos en BD todavía, solo en memoria, hasta que interactuemos con él.
             else:
                 # Guardar temporalmente en memoria para que la UI lo muestre como offline
-                import uuid
                 synthetic_id = f"manual_{uuid.uuid4().hex[:8]}"
                 self._temp_manual_peers[synthetic_id] = {
                     "node_id": synthetic_id,
@@ -300,8 +293,7 @@ class SysNodeCore:
         threading.Thread(target=ping_worker, daemon=True).start()
 
     def send_text_to_peer(self, node_id: str, text: str) -> Tuple[bool, str, str]:
-        """Envía un texto al Shared Board de un nodo activo, o lo encola si está offline."""
-        import uuid
+        # Envía un texto al Shared Board de un nodo activo, o lo encola si está offline.
         msg_uuid = str(uuid.uuid4())
         
         peers = self.get_active_peers()
@@ -340,7 +332,7 @@ class SysNodeCore:
         return success, response, msg_uuid
 
     def edit_remote_message(self, node_id: str, msg_uuid: str, new_text: str) -> Tuple[bool, str]:
-        """Envía una petición para editar un mensaje enviado."""
+        # Envía una petición para editar un mensaje enviado.
         self.db.update_message_text(msg_uuid, new_text)
         
         peers = self.get_active_peers()
@@ -363,16 +355,16 @@ class SysNodeCore:
         return success, response
         
     def start_sharing_server(self, port: int = 8080) -> str:
-        """Inicia el servidor HTTP y devuelve la URL local."""
+        # Inicia el servidor HTTP y devuelve la URL local.
         self.http_server.start(port=port)
         return f"http://{self.local_ip}:{self.http_server.port}"
         
     def stop_sharing_server(self):
-        """Detiene el servidor HTTP."""
+        # Detiene el servidor HTTP.
         self.http_server.stop()
 
     def send_command_to_peer(self, node_id: str, command_key: str) -> Tuple[bool, str]:
-        """Envía una solicitud de ejecución remota a un nodo activo específico."""
+        # Envía una solicitud de ejecución remota a un nodo activo específico.
         peers = self.get_active_peers()
         if node_id not in peers:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
@@ -403,7 +395,7 @@ class SysNodeCore:
         return success, msg
 
     def send_bash_command_to_peer(self, node_id: str, bash_command: str, is_background: bool = False) -> Tuple[bool, str]:
-        """Envía una solicitud de ejecución de comando custom a un nodo activo."""
+        # Envía una solicitud de ejecución de comando custom a un nodo activo.
         peers = self.get_active_peers()
         if node_id not in peers:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
@@ -435,7 +427,7 @@ class SysNodeCore:
         return success, msg
 
     def send_file_to_peer(self, node_id: str, file_path: str, progress_callback=None) -> Tuple[bool, str]:
-        """Transmite un archivo binario local al nodo remoto activo sobre TCP."""
+        # Transmite un archivo binario local al nodo remoto activo sobre TCP.
         peers = self.get_active_peers()
         if node_id not in peers:
             return False, f"Nodo con ID '{node_id}' no encontrado en la lista activa."
@@ -459,18 +451,12 @@ class SysNodeCore:
         return success, msg
 
     def request_pairing(self, node_id: str) -> bool:
-        """Envía una solicitud de vinculación a un nodo."""
+        # Envía una solicitud de vinculación a un nodo.
         peers = self.get_active_peers()
         if node_id not in peers:
             return False
-            
-        import secrets
         # Generar un token único y robusto
         new_token = secrets.token_hex(32)
-        # Guardarlo localmente como temporal o actualizar el token directamente
-        # The true pairing only happens when the other accepts, but we need to send OUR token
-        # so they can save it.
-        # Enviar solicitud
         peer = peers[node_id]
         success, response = TCPClient.send_pairing_request(
             peer_ip=peer["ip"],
@@ -480,28 +466,18 @@ class SysNodeCore:
             trust_token=new_token,
             sender_tcp_port=self.tcp_port
         )
-        
         if success:
-            # We save our generated token to use it later if they accept
-            # Actually, the logic is: we trust them using a token they give us, or we give them a token to trust us?
-            # It's better if they generate a token for us, or we just generate one and both use it.
-            # Let's use a single shared token for the pair.
-            # Save it temporarily or just save it directly (not fully paired yet until they respond).
-            # To avoid complexity, we can just save it with is_paired=False.
             self.db.set_device_paired(node_id, False, new_token)
             logger.info(f"Solicitud de vinculación enviada a {node_id}")
             return True
         return False
 
     def respond_pairing(self, node_id: str, node_name: str, peer_ip: str, peer_port: int, accepted: bool, peer_token: str) -> Tuple[bool, str]:
-        """Responde a una solicitud de vinculación usando IP y puerto directos."""
+        # Responde a una solicitud de vinculación usando IP y puerto directos.
         sender_id = node_id
-        
-        from sysnode.network.tcp_client import TCPClient
         
         trust_token = None
         if accepted:
-            import uuid
             trust_token = str(uuid.uuid4())
             self.db.set_device_paired(sender_id, True, trust_token)
         else:
@@ -519,17 +495,13 @@ class SysNodeCore:
         return success, msg
 
     def unpair_device(self, peer_id: str) -> Tuple[bool, str]:
-        """Desvincula un dispositivo localmente y le notifica para que haga lo mismo."""
-        # 1. Desvincular localmente
+        # Desvincula un dispositivo localmente y le notifica para que haga lo mismo.
         self.db.set_device_paired(peer_id, False, None)
-        
-        # 2. Notificar al otro dispositivo si está online
+        # Notifica al otro dispositivo si está online
         peer_info = self.get_active_peers().get(peer_id)
         if peer_info:
             peer_ip = peer_info.get("ip")
             peer_port = peer_info.get("tcp_port", 50001)
-            
-            from sysnode.network.tcp_client import TCPClient
             success, msg = TCPClient.send_unpair_request(
                 peer_ip=peer_ip,
                 peer_port=peer_port,

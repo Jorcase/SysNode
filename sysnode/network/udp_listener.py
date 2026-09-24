@@ -1,7 +1,3 @@
-"""
-SysNode - Hilo Receptor UDP (Radar LAN y Mantenimiento de Nodos Activos)
-"""
-
 import json
 import time
 import socket
@@ -24,26 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 class UDPListener(threading.Thread):
-    """
-    Hilo de segundo plano (daemon) encargado de:
-    1. Escuchar datagramas UDP Broadcast en el puerto 50000.
-    2. Mantener en memoria el diccionario `active_peers` de nodos descubiertos.
-    3. Ejecutar periódicamente la limpieza de nodos cuyos latidos hayan superado el tiempo TTL.
-    4. Notificar eventos (aparición, actualización, desaparición) a una cola thread-safe `queue.Queue`.
-    """
-
     def __init__(self, my_node_id: str, event_callback):
         super().__init__(daemon=True, name="UDPListenerThread")
         self.my_node_id = my_node_id
         self.event_callback = event_callback
         self.running = False
         self.stealth_mode = False
-        
-        # Diccionario thread-safe protegido por Lock:
-        # node_id -> {hostname, os, tcp_port, ip, last_seen}
         self.active_peers: Dict[str, Dict[str, Any]] = {}
         self.peers_lock = threading.Lock()
-        
         self._stop_event = threading.Event()
 
     def run(self) -> None:

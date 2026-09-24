@@ -151,11 +151,11 @@ class SysNodeDatabase:
             if row and row[0]:
                 return row[0]
                 
-            # If not found or null, generate one
+            # Si no se encuentra o es nulo, genera uno
             import uuid
             new_uuid = str(uuid.uuid4())
             
-            # Check if row 1 exists at all
+            # Revisa si la fila 1 existe
             cursor.execute("SELECT id FROM local_user WHERE id = 1")
             if cursor.fetchone():
                 cursor.execute("UPDATE local_user SET device_uuid = ? WHERE id = 1", (new_uuid,))

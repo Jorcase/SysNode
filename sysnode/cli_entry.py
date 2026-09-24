@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-SysNode - Punto de Entrada Principal
-"""
 
 import sys
 import logging
@@ -13,7 +10,7 @@ from sysnode.ui.cli import run_cli
 
 
 def setup_logging(verbose: bool = False):
-    """Configura el formato del sistema de logs."""
+    """configura el formato del sistema de logs."""
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
@@ -32,13 +29,11 @@ def main():
 
     setup_logging(args.verbose)
 
-    # 1. Instanciar el core (independiente de la UI)
+    # Instanciar el core
     core = SysNodeCore(node_name=args.name, tcp_port=args.tcp_port)
-    
-    # 2. Iniciar servicios de red en hilos secundarios
+    # Iniciar servicios de red en hilos secundarios
     core.start()
-    
-    # 3. Lanzar la UI (MainThread)
+    # Lanzar la UI
     try:
         if args.cli:
             logging.info("Iniciando en modo Consola (CLI)...")

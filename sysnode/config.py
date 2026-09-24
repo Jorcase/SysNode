@@ -1,7 +1,4 @@
-"""
-SysNode - Configuración y Constantes Globales de Red
-"""
-
+from PIL import ImageFont
 import os
 import platform
 
