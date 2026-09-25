@@ -1,11 +1,3 @@
-"""
-SysNode - Módulo de Seudoterminal Remota (Terminal Server PTY & PIN Pairing)
-
-Administra sesiones interactivas de terminal remota estilo SSH sobre sockets TCP.
-Maneja la creación de PTY (Master/Slave), streaming de stdout/stdin, redimensionado
-de ventana (cols, rows) y autenticación mediante código PIN visual en pantalla.
-"""
-
 import os
 import sys
 import random
@@ -34,7 +26,7 @@ except ImportError:
 
 
 class PTYSession:
-    """Representa una sesión interactiva PTY activa."""
+    #Representa una sesión interactiva PTY activa.
 
     def __init__(self, session_id: str, client_sock: socket.socket, pin: str, cols: int = 80, rows: int = 24):
         self.session_id = session_id
@@ -51,7 +43,7 @@ class PTYSession:
         self.reader_thread: Optional[threading.Thread] = None
 
     def start_shell(self):
-        """Inicia el proceso shell (/bin/bash o cmd.exe) atado a la PTY."""
+        #Inicia el proceso shell (/bin/bash o cmd.exe) atado a la PTY.
         shell_cmd = os.environ.get("SHELL") or ("/bin/bash" if sys.platform != "win32" else "cmd.exe")
         
         if HAS_PTY and sys.platform != "win32":
@@ -107,7 +99,7 @@ class PTYSession:
                 return False
 
     def write_stdin(self, data_str: str):
-        """Escribe datos de entrada (teclado/stdin) hacia la shell."""
+        #Escribe datos de entrada (teclado/stdin) hacia la shell.
         if not self.running:
             return
         
@@ -122,7 +114,7 @@ class PTYSession:
             logger.error(f"Error escribiendo en stdin PTY: {e}")
 
     def set_winsize(self, cols: int, rows: int):
-        """Ajusta las dimensiones de la ventana PTY (cols, rows)."""
+        #Ajusta las dimensiones de la ventana PTY (cols, rows).
         self.cols = cols
         self.rows = rows
         if HAS_PTY and self.master_fd is not None:
@@ -133,7 +125,7 @@ class PTYSession:
                 pass
 
     def _read_master_loop(self):
-        """Hilo lector continuo desde la PTY master hacia el socket TCP del cliente."""
+        #Hilo lector continuo desde la PTY master hacia el socket TCP del cliente.
         while self.running and self.master_fd is not None:
             try:
                 r, _, _ = select.select([self.master_fd], [], [], 0.1)
@@ -154,7 +146,7 @@ class PTYSession:
         self.close()
 
     def _read_pipe_loop(self):
-        """Hilo lector continuo para pipes de Windows."""
+        #Hilo lector continuo para pipes de Windows.
         while self.running and self.proc and self.proc.stdout:
             try:
                 chunk = self.proc.stdout.read(1024)
@@ -173,7 +165,7 @@ class PTYSession:
         self.close()
 
     def close(self):
-        """Cierra la sesión PTY y libera procesos/descriptores."""
+        #Cierra la sesión PTY y libera procesos/descriptores.
         if not self.running:
             return
         
@@ -209,14 +201,14 @@ class PTYSession:
 
 
 class TerminalManager:
-    """Administrador global de sesiones de terminal en el nodo."""
+    #Administrador global de sesiones de terminal en el nodo.
 
     def __init__(self):
         self.sessions: Dict[str, PTYSession] = {}
         self.lock = threading.Lock()
 
     def create_session(self, client_sock: socket.socket, cols: int = 80, rows: int = 24) -> Tuple[str, str]:
-        """Genera una nueva sesión con un PIN de 6 dígitos."""
+        #Genera una nueva sesión con un PIN de 6 dígitos.
         session_id = f"term_{random.randint(100000, 999999)}"
         pin = f"{random.randint(100000, 999999)}"
         
@@ -227,7 +219,7 @@ class TerminalManager:
         return session_id, pin
 
     def authenticate_session(self, session_id: str, pin: str) -> bool:
-        """Verifica el PIN de autorización para iniciar la shell."""
+        #Verifica el PIN de autorización para iniciar la shell.
         with self.lock:
             session = self.sessions.get(session_id)
             if not session:

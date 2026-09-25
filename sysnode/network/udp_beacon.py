@@ -1,7 +1,3 @@
-"""
-SysNode - Hilo Emisor UDP Broadcast (Heartbeat / Beacon)
-"""
-
 import json
 import time
 import socket
@@ -21,12 +17,9 @@ from sysnode.config import (
 
 logger = logging.getLogger(__name__)
 
-
 class UDPBeacon(threading.Thread):
-    """
-    Hilo de segundo plano (daemon) encargado de emitir periódicamente
-    un datagrama UDP Broadcast anunciando la presencia del nodo en la LAN.
-    """
+    # Hilo de segundo plano(daemon) encargado de emitir periódicamente un
+    # datagrama UDP Broadcast anunciando la presencia del nodo en la LAN.
 
     def __init__(self, node_id: str, tcp_port: int, custom_name: str = None):
         super().__init__(daemon=True, name="UDPBeaconThread")
@@ -41,9 +34,9 @@ class UDPBeacon(threading.Thread):
         self.running = True
         logger.info(f"UDPBeacon iniciado -> Anunciando en {BROADCAST_IP}:{UDP_DISCOVERY_PORT} cada {BEACON_INTERVAL_SEC}s")
 
-        # Crear socket UDP para emisión broadcast
+        # Creación del socket UDP para emisión broadcast
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1) #sock.setsockopt(NIVEL, OPCIÓN, VALOR)
 
         while not self._stop_event.is_set():
             try:
@@ -61,10 +54,8 @@ class UDPBeacon(threading.Thread):
             except Exception as e:
                 logger.error(f"Error emitiendo UDP Beacon: {e}")
 
-            # Esperar el intervalo configurado o salir inmediatamente si se solicita detener
             self._stop_event.wait(BEACON_INTERVAL_SEC)
 
-        # Enviar aviso opcional de despedida al cerrar
         try:
             goodbye_payload = {
                 "type": PROTOCOL_TYPE_GOODBYE,
@@ -79,5 +70,5 @@ class UDPBeacon(threading.Thread):
         logger.info("UDPBeacon detenido.")
 
     def stop(self) -> None:
-        """Solicita la detención segura del hilo."""
+        # Solicita la detención segura del hilo.
         self._stop_event.set()

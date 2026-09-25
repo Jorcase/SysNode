@@ -33,10 +33,8 @@ class UDPListener(threading.Thread):
     def run(self) -> None:
         self.running = True
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        
-        # Configurar reutilización de socket para pruebas locales simultáneas
+        # Configurar reutilización de socket
         configure_udp_reuse(sock)
-        
         # Timeout para permitir revisar el evento _stop_event periódicamente
         sock.settimeout(1.0)
         
@@ -51,7 +49,7 @@ class UDPListener(threading.Thread):
         last_cleanup_time = time.time()
 
         while not self._stop_event.is_set():
-            # 1. Intentar recibir datagramas UDP
+            #Intenta recibir datagramas UDP
             try:
                 data, addr = sock.recvfrom(BUFFER_SIZE)
                 peer_ip = addr[0]
@@ -62,7 +60,7 @@ class UDPListener(threading.Thread):
                 if not self._stop_event.is_set():
                     logger.error(f"Excepción en UDPListener recv: {e}")
 
-            # 2. Cada 1 segundo, verificar expiración de nodos (TTL)
+            #Cada 1 seg, verifica expiración de nodos (TTL)
             now = time.time()
             if now - last_cleanup_time >= 1.0:
                 self._cleanup_expired_peers(now)
@@ -73,20 +71,15 @@ class UDPListener(threading.Thread):
         logger.info("UDPListener detenido.")
 
     def _process_datagram(self, data: bytes, peer_ip: str) -> None:
-        """Parsea el JSON entrante e ignora el propio nodo. Si el modo oculto está activo, ignora todo."""
+        # Parsea el JSON entrante e ignora el propio nodo. Si el modo oculto está activo, ignora todo.
         if self.stealth_mode:
-            return
-            
+            return 
         try:
             payload = json.loads(data.decode("utf-8"))
             node_id = payload.get("node_id")
-
-            # Ignorar latidos emitidos por este mismo proceso
             if not node_id or node_id == self.my_node_id:
                 return
-
             msg_type = payload.get("type")
-
             if msg_type == PROTOCOL_TYPE_ANNOUNCE:
                 now = time.time()
                 hostname = payload.get("hostname", "unknown")
@@ -134,7 +127,7 @@ class UDPListener(threading.Thread):
             pass
 
     def add_manual_peer(self, ip: str, port: int, node_id: str, hostname: str, os_type: str) -> None:
-        """Añade un peer de forma manual (verificado por TCP)."""
+        # Añade un peer de forma manual (verificado por TCP).
         with self.peers_lock:
             self.active_peers[node_id] = {
                 "node_id": node_id,
@@ -153,7 +146,8 @@ class UDPListener(threading.Thread):
         })
 
     def _cleanup_expired_peers(self, now: float) -> None:
-        """Elimina del diccionario de peers los nodos que no hayan enviado latido por más de PEER_TTL_SEC."""
+        # Elimina del diccionario de peers los nodos que no hayan enviado
+        # latido por más de PEER_TTL_SEC.
         expired_ids = []
 
         with self.peers_lock:
@@ -172,10 +166,9 @@ class UDPListener(threading.Thread):
             })
 
     def get_active_peers(self) -> Dict[str, Dict[str, Any]]:
-        """Devuelve una copia thread-safe de la lista de nodos activos."""
+        # Devuelve una copia thread-safe de la lista de nodos activos.
         with self.peers_lock:
             return dict(self.active_peers)
 
     def stop(self) -> None:
-        """Solicita la detención del hilo receptor."""
         self._stop_event.set()

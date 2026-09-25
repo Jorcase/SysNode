@@ -1,33 +1,22 @@
 from sysnode.network.protocol import ActionType
-"""
-SysNode - Servidor TCP Multihilo (Shared Board y Comandos Remotos)
-
-Escucha en el puerto TCP 50001 (configurable) y lanza un hilo secundario por cada
-conexión entrante (Worker Thread). Implementa el protocolo de framing para recibir
-mensajes JSON seguros sin fragmentación.
-"""
-
 import os
 import socket
 import queue
 import threading
 import logging
 from typing import Dict, Any
-
-from sysnode.config import BIND_ALL_IP, DEFAULT_TCP_PORT, SOCKET_TIMEOUT_SEC
+from sysnode.config import BIND_ALL_IP, DEFAULT_TCP_PORT, SOCKET_TIMEOUT_SEC, SYSTEM_OS
 from sysnode.network.framing import receive_framed_message, send_framed_message
 from sysnode.core.security import execute_whitelisted_command, sanitize_filename
 from sysnode.network.file_transfer import receive_file_bytes
+from sysnode.network.terminal_server import terminal_manager
 
 logger = logging.getLogger(__name__)
 
 
 class TCPServer(threading.Thread):
-    """
-    Servidor TCP multihilo que escucha peticiones entrantes de otros pares en la LAN.
-    Por cada cliente aceptado, delega la atención a un hilo TCPClientHandlerThread.
-    """
-
+    # Servidor TCP multihilo que escucha peticiones entrantes de otros pares en la LAN.
+    # Por cada cliente aceptado, delega la atención a un hilo TCPClientHandlerThread.
     def __init__(self, tcp_port: int, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None, is_paired_checker=None):
         super().__init__(daemon=True, name="TCPServerThread")
         self.tcp_port = tcp_port
@@ -61,7 +50,7 @@ class TCPServer(threading.Thread):
                 peer_ip = addr[0]
                 logger.debug(f"Nueva conexión TCP aceptada desde {peer_ip}:{addr[1]}")
 
-                # Lanzar worker thread para atentar a este cliente específico
+                # Lanza worker thread para atender a este cliente específico
                 worker = TCPClientHandlerThread(
                     client_sock=client_sock,
                     peer_ip=peer_ip,
@@ -85,15 +74,13 @@ class TCPServer(threading.Thread):
         logger.info("TCPServer detenido.")
 
     def stop(self) -> None:
-        """Solicita la detención del servidor TCP."""
+        #Solicita la detención del servidor TCP.
         self._stop_event.set()
 
 
 class TCPClientHandlerThread(threading.Thread):
-    """
-    Hilo worker que atiende la comunicación con una conexión TCP entrante específica.
-    Recibe la trama con framing, determina la acción y responde si corresponde.
-    """
+    #Hilo worker que atiende la comunicación con una conexión TCP entrante específica.
+    #Recibe la trama con framing, determina la acción y responde si corresponde.
 
     def __init__(self, client_sock: socket.socket, peer_ip: str, event_callback, node_id: str = "unknown", node_name: str = None, download_dir_getter=None, is_paired_checker=None):
         super().__init__(daemon=True, name=f"TCPWorker-{peer_ip}")
@@ -135,15 +122,14 @@ class TCPClientHandlerThread(threading.Thread):
                 if not socket_authenticated and action not in [ActionType.PING_NODE, ActionType.PAIRING_REQ, ActionType.PAIRING_RESP, ActionType.UNPAIR_REQ]:
                     trust_token = payload.get("trust_token", "")
                     if self.is_paired_checker and not self.is_paired_checker(sender_id, trust_token):
-                        logger.warning(f"🚨 ACCESO DENEGADO: Intento de acción '{action}' desde nodo no emparejado {sender_name} ({sender_id}).")
+                        logger.warning(f"ACCESO DENEGADO: Intento de acción '{action}' desde nodo no emparejado {sender_name} ({sender_id}).")
                         send_framed_message(self.client_sock, {"status": "ERROR", "msg": "NOT_PAIRED"})
                         break
                     else:
                         socket_authenticated = True
 
-                # Caso 0: Ping Node (para conexiones manuales)
+                # Caso Ping Node (conexiones manuales)
                 if action == ActionType.PING_NODE:
-                    from sysnode.network.udp_beacon import SYSTEM_OS
                     response = {
                         "status": "OK",
                         "node_id": self.node_id,
@@ -195,7 +181,7 @@ class TCPClientHandlerThread(threading.Thread):
                     send_framed_message(self.client_sock, {"status": "OK", "msg": "Unpaired."})
                     break
 
-                # Caso 1: Compartir Texto (Shared Board)
+                # Caso Compartir Texto
                 elif action == ActionType.SHARE_TEXT:
                     text_content = payload.get("payload", "")
                     msg_uuid = payload.get("msg_uuid", None)
@@ -212,7 +198,7 @@ class TCPClientHandlerThread(threading.Thread):
                     send_framed_message(self.client_sock, {"status": "OK", "msg": f"Texto recibido por {self.node_name}."})
                     break
 
-                # Caso 1.5: Editar Texto
+                # Caso Editar Texto
                 elif action == ActionType.EDIT_MSG:
                     msg_uuid = payload.get("msg_uuid", "")
                     new_text = payload.get("new_text", "")
@@ -227,14 +213,12 @@ class TCPClientHandlerThread(threading.Thread):
                     send_framed_message(self.client_sock, {"status": "OK", "msg": f"Mensaje editado por {self.node_name}."})
                     break
 
-                # Caso 2: Ejecución de Comando Remoto (SysAdmin)
+                # Caso Ejecución de Comando Remoto
                 elif action == ActionType.REMOTE_CMD:
                     command_key = payload.get("command", "")
                     logger.info(f"Solicitud de comando remoto: '{command_key}' enviado por {sender_name}")
 
                     success, result_msg = execute_whitelisted_command(command_key, receiver_name=self.node_name)
-
-                    # Notificar a la cola de eventos interna
                     self.event_callback({
                         "event": "COMMAND_RECEIVED",
                         "command": command_key,
@@ -245,8 +229,6 @@ class TCPClientHandlerThread(threading.Thread):
                         "success": success,
                         "result": result_msg
                     })
-
-                    # Responder al cliente emisor
                     send_framed_message(self.client_sock, {
                         "status": "OK" if success else "ERROR",
                         "command": command_key,
@@ -258,7 +240,6 @@ class TCPClientHandlerThread(threading.Thread):
                     bash_command = payload.get("bash_command", "")
                     is_bg = payload.get("is_background", False)
                     logger.info(f"Solicitud de comando BASH: '{bash_command}' enviado por {sender_name} (Background: {is_bg})")
-
                     from sysnode.core.security import execute_custom_bash_command
                     success, result_msg = execute_custom_bash_command(bash_command, receiver_name=self.node_name, is_background=is_bg)
 
@@ -280,7 +261,7 @@ class TCPClientHandlerThread(threading.Thread):
                     })
                     break
 
-                # Caso 3: Transferencia de Archivo (File Drop)
+                # Caso Transferencia de Archivo
                 elif action == ActionType.FILE_TRANSFER_META:
                     raw_filename = payload.get("filename", "unknown_file")
                     filesize_bytes = payload.get("filesize_bytes", 0)
@@ -299,7 +280,6 @@ class TCPClientHandlerThread(threading.Thread):
                         "action": "FILE_TRANSFER_ACK",
                         "status": "READY"
                     })
-
                     # Callback para actualizar el progreso en vivo
                     def progress_cb(received_bytes, total):
                         self.event_callback({
@@ -309,7 +289,6 @@ class TCPClientHandlerThread(threading.Thread):
                             "current": received_bytes,
                             "total": total
                         })
-
                     # Iniciar lectura del flujo binario en chunks de 4KB
                     success, result_msg = receive_file_bytes(
                         sock=self.client_sock,
@@ -332,9 +311,8 @@ class TCPClientHandlerThread(threading.Thread):
                     })
                     break
 
-                # Caso 4: Terminal Remota (SSH-Style PTY)
+                # Caso Terminal Remota 
                 elif action == ActionType.TERM_INIT:
-                    from sysnode.network.terminal_server import terminal_manager
                     cols = payload.get("cols", 80)
                     rows = payload.get("rows", 24)
                     session_id, _ = terminal_manager.create_session(self.client_sock, cols, rows)
@@ -358,20 +336,17 @@ class TCPClientHandlerThread(threading.Thread):
                         break
 
                 elif action == ActionType.TERM_STDIN:
-                    from sysnode.network.terminal_server import terminal_manager
                     session_id = payload.get("session_id", "")
                     data = payload.get("data", "")
                     terminal_manager.handle_stdin(session_id, data)
 
                 elif action == ActionType.TERM_RESIZE:
-                    from sysnode.network.terminal_server import terminal_manager
                     session_id = payload.get("session_id", "")
                     cols = payload.get("cols", 80)
                     rows = payload.get("rows", 24)
                     terminal_manager.handle_resize(session_id, cols, rows)
 
                 elif action == ActionType.TERM_CLOSE:
-                    from sysnode.network.terminal_server import terminal_manager
                     session_id = payload.get("session_id", "")
                     terminal_manager.close_session(session_id)
                     break
@@ -386,7 +361,6 @@ class TCPClientHandlerThread(threading.Thread):
         finally:
             if active_session_id:
                 try:
-                    from sysnode.network.terminal_server import terminal_manager
                     terminal_manager.close_session(active_session_id)
                 except Exception:
                     pass

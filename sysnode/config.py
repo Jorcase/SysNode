@@ -20,7 +20,7 @@ AUTH_TIMEOUT_SEC = 5.0
 
 # Tamaños de búfer y framing (bytes)
 BUFFER_SIZE = 4096
-TCP_HEADER_SIZE = 4  # 4 bytes Big-Endian unsigned int (struct format '>I')
+TCP_HEADER_SIZE = 4 
 
 def get_detailed_os():
     base_os = platform.system().lower()

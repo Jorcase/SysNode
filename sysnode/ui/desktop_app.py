@@ -1,9 +1,3 @@
-"""
-sysnode/ui/desktop_app.py
-Interfaz Gráfica de Escritorio usando CustomTkinter.
-Implementa un diseño Split-View moderno (tipo chat) y persistencia en DB normalizada.
-"""
-
 import sys
 import queue
 import logging

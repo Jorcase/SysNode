@@ -1,12 +1,3 @@
-"""
-SysNode - Módulo de Seguridad y Hardening (Ciberseguridad - Blue Team)
-
-Previene vulnerabilidades de Command Injection (CWE-77) y ejecución remota no autorizada.
-Los comandos que llegan por la red TCP se validan estrictamente contra un mapa estático
-de listas blancas (COMMAND_WHITELIST). Ningún string enviado por un cliente se ejecuta
-directamente en una shell de sistema.
-"""
-
 import os
 import sys
 import time
@@ -40,15 +31,13 @@ COMMAND_WHITELIST: Dict[str, Dict[str, Any]] = {
 
 
 def is_command_allowed(command_key: str) -> bool:
-    """Verifica si la clave de comando enviada por la red existe en la lista blanca."""
+    #Verifica si la clave de comando enviada por la red existe en la lista blanca.
     return command_key in COMMAND_WHITELIST
 
 
 def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> Tuple[bool, str]:
-    """
-    Ejecuta de forma segura un comando validado contra la lista blanca.
-    Devuelve una tupla (éxito: bool, mensaje_resultado: str).
-    """
+    #Ejecuta de forma segura un comando validado contra la lista blanca.
+    #Devuelve una tupla (éxito: bool, mensaje_resultado: str).
     if not is_command_allowed(command_key):
         msg = f"ACCESO DENEGADO: El comando '{command_key}' no está registrado en la lista blanca."
         logger.warning(msg)
@@ -60,7 +49,7 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
     node_label = receiver_name or platform.node()
 
     try:
-        # Caso especial 1: Bloqueo de sesión
+        #Bloqueo de sesión
         if command_key == "CMD_LOCK_SCREEN":
             if current_os == "windows":
                 # Usar API nativa ctypes de Windows sin crear procesos externos
@@ -106,12 +95,12 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
                         continue
                 return False, f"[{node_label}] No se pudo bloquear la pantalla. Ningún gestor compatible funcionó."
 
-        # Caso especial 2: Información del sistema
+        #Información del sistema
         elif command_key == "CMD_SYS_INFO":
             info_str = f"[{node_label}] OS: {platform.system()} {platform.release()} | Python: {platform.python_version()}"
             return True, info_str
 
-        # Caso especial 3: Ping / Test de Conectividad a Internet real
+        # Ping / Test de Conectividad a Internet real
         elif command_key == "CMD_PING":
             start = time.time()
             try:
@@ -139,7 +128,7 @@ def execute_whitelisted_command(command_key: str, receiver_name: str = None) -> 
         return False, f"Error durante la ejecución: {str(e)}"
 
 def get_detailed_os() -> list:
-    """Retorna una lista de identificadores de SO de más específico a más general."""
+    #Retorna una lista de identificadores de SO de más específico a más general.
     sys_os = platform.system().lower()
     if sys_os == "windows":
         return ["windows"]
@@ -160,11 +149,9 @@ def get_detailed_os() -> list:
     return os_list
 
 def parse_multi_os_command(raw_command: str, os_hierarchy: list) -> str:
-    """
-    Parsea un comando con etiquetas como [windows], [ubuntu], [linux]
-    y devuelve el mejor comando para el SO actual.
-    Si no hay etiquetas, devuelve el comando original.
-    """
+    #Parsea un comando con etiquetas como [windows], [ubuntu], [linux]
+    #y devuelve el mejor comando para el SO actual.
+    #Si no hay etiquetas, devuelve el comando original.
     import re
     
     # Buscar todas las etiquetas y su contenido
@@ -191,10 +178,9 @@ def parse_multi_os_command(raw_command: str, os_hierarchy: list) -> str:
     return ""
 
 def execute_custom_bash_command(bash_command: str, receiver_name: str = None, is_background: bool = False) -> Tuple[bool, str]:
-    """
-    Ejecuta un comando Bash/Batch arbitrario enviado desde un dispositivo vinculado y confiable.
-    Atención: Esto ignora la lista blanca y delega la seguridad exclusivamente al token de vinculación.
-    """
+    #Ejecuta un comando Bash/Batch arbitrario enviado desde un dispositivo vinculado y confiable.
+    #Atención: Esto ignora la lista blanca y delega la seguridad exclusivamente al token de vinculación.
+    
     node_label = receiver_name or platform.node()
     
     os_hierarchy = get_detailed_os()
@@ -230,10 +216,9 @@ def execute_custom_bash_command(bash_command: str, receiver_name: str = None, is
         return False, f"[{node_label}] Error en ejecución: {str(e)}"
 
 def sanitize_filename(incoming_filename: str) -> str:
-    r"""
-    Sanitiza nombres de archivos entrantes desde la red para evitar ataques de Path Traversal (CWE-22).
-    Extrae únicamente el nombre base descartando rutas relativas (../) o absolutas (/etc/passwd, C:\...).
-    """
+    #Sanitiza nombres de archivos entrantes desde la red para evitar ataques de Path Traversal (CWE-22).
+    #Extrae únicamente el nombre base descartando rutas relativas (../) o absolutas (/etc/passwd, C:\...).
+    
     if not incoming_filename:
         return "unnamed_file"
     

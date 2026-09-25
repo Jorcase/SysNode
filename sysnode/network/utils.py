@@ -29,10 +29,6 @@ def get_local_lan_ip() -> str:
 
 
 def configure_udp_reuse(sock: socket.socket) -> None:
-    """
-    Configura las opciones de socket SO_REUSEADDR y SO_REUSEPORT (si está disponible en el SO)
-    para permitir que múltiples instancias locales del nodo escuchen en el mismo puerto UDP Broadcast (50000).
-    """
     # SO_REUSEADDR para reutilizar el puerto inmediatamente
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 

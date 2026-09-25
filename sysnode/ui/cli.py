@@ -1,7 +1,3 @@
-"""
-SysNode - Interfaz de Línea de Comandos Interactivas (CLI Fase 2)
-"""
-
 import os
 import sys
 import time
@@ -17,11 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class SysNodeCLI:
-    """
-    CLI interactiva multihilo.
-    Renderiza el Radar LAN, el historial de mensajes recibidos (Shared Board)
-    y procesa comandos del usuario en un menú interactivo sin bloquear los eventos de red.
-    """
 
     def __init__(self, node_core: SysNodeCore):
         self.core = node_core
