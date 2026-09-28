@@ -133,6 +133,7 @@ export class TcpServer {
     const senderId = payload.sender_id || "unknown";
     const senderName = payload.sender_name || "Unknown";
     const { MessageStorage } = require('./MessageStorage');
+    const remoteIp = (socket && socket.remoteAddress) ? socket.remoteAddress.replace(/^::ffff:/, '') : '127.0.0.1';
 
     if (action !== "PING_NODE" && action !== "PAIRING_REQ" && action !== "PAIRING_RESP" && action !== "UNPAIR_REQ") {
       const trustToken = payload.trust_token || "";
@@ -150,7 +151,7 @@ export class TcpServer {
           type: "PAIRING_REQ",
           sender: senderName,
           sender_id: senderId,
-          peer_ip: socket.remoteAddress,
+          peer_ip: remoteIp,
           trust_token: payload.trust_token || "",
           ...payload
         });
@@ -159,9 +160,18 @@ export class TcpServer {
     }
     else if (action === "PAIRING_RESP") {
       const accepted = payload.accepted || false;
-      const trustToken = payload.trust_token || "";
+      let trustToken = payload.trust_token || "";
       
-      if (accepted && trustToken) {
+      if (accepted) {
+        if (!trustToken || trustToken.trim() === "") {
+          const savedToken = await MessageStorage.getDeviceTrustToken(senderId);
+          if (savedToken) {
+            trustToken = savedToken;
+          } else {
+            const CryptoJS = require('crypto-js');
+            trustToken = CryptoJS.lib.WordArray.random(32).toString();
+          }
+        }
         await MessageStorage.setDevicePaired(senderId, true, trustToken);
         console.log(`[TCP Server] Dispositivo ${senderId} aceptó la vinculación.`);
       } else {
@@ -174,8 +184,9 @@ export class TcpServer {
           type: "PAIRING_RESP",
           sender: senderName,
           sender_id: senderId,
-          peer_ip: socket.remoteAddress,
+          peer_ip: remoteIp,
           accepted: accepted,
+          trust_token: trustToken,
           ...payload
         });
       }
@@ -190,7 +201,7 @@ export class TcpServer {
           type: "UNPAIR_REQ",
           sender: senderName,
           sender_id: senderId,
-          peer_ip: socket.remoteAddress,
+          peer_ip: remoteIp,
           ...payload
         });
       }
@@ -202,7 +213,7 @@ export class TcpServer {
           type: "TEXT",
           sender: senderName,
           text: payload.payload,
-          peer_ip: socket.remoteAddress,
+          peer_ip: remoteIp,
           ...payload
         });
       }

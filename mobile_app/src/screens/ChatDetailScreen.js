@@ -145,12 +145,17 @@ export default function ChatDetailScreen() {
       MessageStorage.updateMessageText(targetNodeId, evt.msg_uuid, evt.new_text);
     });
 
-    const subPairingResp = DeviceEventEmitter.addListener('onPairingResponse', () => {
+    const subPairingResp = DeviceEventEmitter.addListener('onPairingResponse', (evt) => {
       checkPairingState();
+      if (evt && evt.accepted === false) {
+        setIsPairingRequested(false);
+        Alert.alert("Vinculación", "La solicitud de vinculación fue rechazada por el otro dispositivo.");
+      }
     });
 
     const subUnpair = DeviceEventEmitter.addListener('onUnpairRequest', () => {
       checkPairingState();
+      setIsPairingRequested(false);
     });
 
     return () => {
@@ -528,15 +533,25 @@ export default function ChatDetailScreen() {
                 onPress={async () => {
                   setIsPairingRequested(true);
                   try {
-                    await TcpClient.sendPairingRequest(
+                    const targetNodeId = node.id || 'pc_desktop_node';
+                    const newTrustToken = TcpClient.generateTrustToken();
+
+                    // Guardamos de forma provisional el token generado en MessageStorage
+                    await MessageStorage.setDevicePaired(targetNodeId, false, newTrustToken);
+
+                    const res = await TcpClient.sendPairingRequest(
                       node.ip, 
                       node.tcp_port, 
                       identity?.node_id || "mobile-id", 
                       identity?.node_name || "Celular",
                       global.myTcpPort || 50001,
-                      ""
+                      newTrustToken
                     );
-                    // The wait is handled by listening to DeviceEventEmitter
+
+                    if (!res || !res.success) {
+                      setIsPairingRequested(false);
+                      Alert.alert("Error de Conexión", res?.msg || "No se pudo contactar con el dispositivo.");
+                    }
                   } catch (e) {
                     console.log("Error solicitando vinculación:", e);
                     Alert.alert("Error", "No se pudo enviar la solicitud de vinculación.");

@@ -7,9 +7,9 @@ Welcome to **SysNode**. Before making any code edits or additions, you **MUST** 
 1. **Read Documentation First:**
    - [00_REGLAS_Y_NORMAS.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/00_REGLAS_Y_NORMAS.md): Strict networking rules (raw Python `socket` module only, `threading` + `queue.Queue`, prohibited abstractions).
    - [01_ARQUITECTURA_Y_RED.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/01_ARQUITECTURA_Y_RED.md): P2P topology, threading model, TCP Length-Prefixed Framing (`struct.pack('>I', len)`), UDP Broadcast protocol.
-   - [02_DESARROLLO_Y_FASE_MVP.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/02_DESARROLLO_Y_FASE_MVP.md): MVP roadmap phases (Phase 1 to Phase 5) and file structure inside `src/`.
+   - [03_ARQUITECTURA_MOBILE_NATIVE.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/03_ARQUITECTURA_MOBILE_NATIVE.md): Native Mobile P2P architecture (React Native raw sockets).
    - [03_INFRAESTRUCTURA_Y_SEGURIDAD.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/03_INFRAESTRUCTURA_Y_SEGURIDAD.md): Cross-platform rules (Windows/Linux) and Command Injection Whitelist (Blue Team).
-   - [04_DEFENSA_EXAMEN_Y_REDES.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/04_DEFENSA_EXAMEN_Y_REDES.md): Exam presentation requirements for the Networks professor.
+   - [COMPILACION_Y_DISTRIBUCION.md](file:///home/jorcas/Documentos/2025-2doCuatrimestre/Sockets/codigo/SysNode/docs/COMPILACION_Y_DISTRIBUCION.md): PyInstaller executable build & distribution guide.
 
 2. **Strict Code & Architecture Constraints:**
    - **No High-Level Network Wrappers for P2P:** Build core P2P features strictly using Python's native `socket` library.

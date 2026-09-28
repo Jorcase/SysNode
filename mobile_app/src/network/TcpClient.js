@@ -3,7 +3,7 @@ import { createFramedMessage } from './Protocol';
 
 export class TcpClient {
   constructor(ip, port, trustToken = "") {
-    this.ip = ip;
+    this.ip = ip ? ip.replace(/^::ffff:/, '') : ip;
     this.port = port;
     this.trustToken = trustToken;
     this.client = null;
@@ -192,11 +192,21 @@ export class TcpClient {
   }
 
   // --- MÉTODOS ESTÁTICOS PARA VINCULACIÓN Y AUTENTICACIÓN ---
+  static generateTrustToken() {
+    try {
+      const CryptoJS = require('crypto-js');
+      return CryptoJS.lib.WordArray.random(32).toString();
+    } catch (e) {
+      return 'tok_' + Date.now() + '_' + Math.random().toString(36).substring(2);
+    }
+  }
+
   static _connectAndSend(ip, port, payload) {
     return new Promise((resolve) => {
+      const cleanIp = ip ? ip.replace(/^::ffff:/, '') : ip;
       const client = TcpSocket.createConnection({
         port: port,
-        host: ip,
+        host: cleanIp,
         timeout: 3000,
       }, () => {
         try {
@@ -219,23 +229,28 @@ export class TcpClient {
   }
 
   static async sendPairingRequest(peerIp, peerPort, senderId, senderName, senderTcpPort, trustToken) {
+    const token = (trustToken && trustToken.trim() !== "") ? trustToken : TcpClient.generateTrustToken();
     const payload = {
       action: "PAIRING_REQ",
       sender_id: senderId,
       sender_name: senderName,
       sender_tcp_port: senderTcpPort || 50001,
-      trust_token: trustToken || ""
+      trust_token: token
     };
     return await TcpClient._connectAndSend(peerIp, peerPort, payload);
   }
 
   static async sendPairingResponse(peerIp, peerPort, senderId, senderName, trustToken, accepted, senderTcpPort) {
+    let token = trustToken;
+    if (accepted && (!token || token.trim() === "")) {
+      token = TcpClient.generateTrustToken();
+    }
     const payload = {
       action: "PAIRING_RESP",
       sender_id: senderId,
       sender_name: senderName,
       sender_tcp_port: senderTcpPort || 50001,
-      trust_token: trustToken || "",
+      trust_token: token || "",
       accepted: accepted
     };
     return await TcpClient._connectAndSend(peerIp, peerPort, payload);

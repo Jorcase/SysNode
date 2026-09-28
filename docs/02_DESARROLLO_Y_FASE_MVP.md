@@ -13,8 +13,7 @@ SysNode/
 │   ├── 00_REGLAS_Y_NORMAS.md
 │   ├── 01_ARQUITECTURA_Y_RED.md
 │   ├── 02_DESARROLLO_Y_FASE_MVP.md
-│   ├── 03_INFRAESTRUCTURA_Y_SEGURIDAD.md
-│   └── 04_DEFENSA_EXAMEN_Y_REDES.md
+│   └── 03_INFRAESTRUCTURA_Y_SEGURIDAD.md
 │
 ├── dudas_implementacion.md         # Registro de preguntas y decisiones
 │

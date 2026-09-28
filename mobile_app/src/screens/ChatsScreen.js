@@ -122,17 +122,22 @@ export default function ChatsScreen() {
               style: "default",
               onPress: async () => {
                 try {
-                  await MessageStorage.setDevicePaired(payload.sender_id, true, payload.trust_token);
-                  DeviceEventEmitter.emit('onPairingResponse', { sender_id: payload.sender_id });
+                  let tokenToUse = payload.trust_token;
+                  if (!tokenToUse || tokenToUse.trim() === '') {
+                    tokenToUse = TcpClient.generateTrustToken();
+                  }
+                  await MessageStorage.setDevicePaired(payload.sender_id, true, tokenToUse);
+                  DeviceEventEmitter.emit('onPairingResponse', { sender_id: payload.sender_id, accepted: true });
                   await TcpClient.sendPairingResponse(
                     payload.peer_ip,
                     payload.sender_tcp_port || 50001,
                     identity?.node_id || "mobile-id",
                     identity?.node_name || "Celular",
-                    payload.trust_token,
+                    tokenToUse,
                     true,
                     global.myTcpPort || 50001
                   );
+                  refreshLatestMessages();
                 } catch (e) {
                   console.log("Error aceptando vinculación:", e);
                 }
@@ -142,6 +147,7 @@ export default function ChatsScreen() {
         );
       } else if (payload.type === 'PAIRING_RESP') {
         DeviceEventEmitter.emit('onPairingResponse', payload);
+        refreshLatestMessages();
       } else if (payload.type === 'UNPAIR_REQ') {
         DeviceEventEmitter.emit('onUnpairRequest', payload);
       } else {
